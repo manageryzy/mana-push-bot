@@ -1,6 +1,7 @@
 import { BotContext, DeveloperCommand, BotStats } from '@/types';
 import { config } from '@/config';
 import { logger, logDeveloperCommand } from '@/utils/logger';
+import { escapeMarkdownV2 } from '@/utils/telegramFormatting';
 import { formatUptime } from '@/utils/helpers';
 
 export class DeveloperService {
@@ -48,15 +49,17 @@ export class DeveloperService {
     const menu = [
       '🔧 *Developer Menu*',
       '',
-      ...this.commands.map(cmd => `${cmd.command} \\- ${cmd.description}`),
+      ...this.commands.map(
+        cmd => `${cmd.command} ${escapeMarkdownV2('- ' + cmd.description)}`
+      ),
       '',
       '💡 *Quick Actions:*',
-      '• /stats \\- Bot statistics',
-      '• /logs \\- Recent activity',
-      '• /reload \\- Reload config',
+      `• /stats ${escapeMarkdownV2('- Bot statistics')}`,
+      `• /logs ${escapeMarkdownV2('- Recent activity')}`,
+      `• /reload ${escapeMarkdownV2('- Reload config')}`,
       '',
-      `🏷 Version: 1\\.0\\.0 | Stage: ${config.app.stage}`,
-    ].join('\\n');
+      `🏷 Version: 1${escapeMarkdownV2('.0.0 | Stage: ' + config.app.stage)}`,
+    ].join('\n');
 
     await ctx.replyWithMarkdownV2(menu);
 
@@ -75,23 +78,25 @@ export class DeveloperService {
       const statsText = [
         '📊 *Bot Statistics*',
         '',
-        `⚡ Uptime: ${formatUptime(stats.uptime)}`,
+        `⚡ Uptime: ${escapeMarkdownV2(formatUptime(stats.uptime))}`,
         `💬 Total Messages: ${stats.totalMessages}`,
         `👥 Active Users: ${stats.activeUsers}`,
         `❌ Error Count: ${stats.errorCount}`,
-        `🕐 Last Update: ${stats.lastUpdate}`,
+        `🕐 Last Update: ${escapeMarkdownV2(stats.lastUpdate)}`,
         '',
         `💾 Memory Usage: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
-        `🖥 Node\\.js: ${process.version.replace(/\./g, '\\.')}`,
+        `🖥 Node${escapeMarkdownV2('.js: ' + process.version)}`,
         `🌍 Environment: ${config.app.stage}`,
         `📍 Region: ${config.aws.region}`,
-      ].join('\\n');
+      ].join('\n');
 
       await ctx.replyWithMarkdownV2(statsText);
 
       logDeveloperCommand(ctx.from?.id || 0, 'stats', [], true);
     } catch (error) {
-      await ctx.reply(`❌ Error retrieving stats: ${error.message}`);
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      await ctx.reply(`❌ Error retrieving stats: ${errorMessage}`);
       logDeveloperCommand(ctx.from?.id || 0, 'stats', [], false);
     }
   }
@@ -117,12 +122,12 @@ export class DeveloperService {
         ...logs
           .map(
             log =>
-              `\`${log.timestamp}\` ${log.level.toUpperCase()}: ${log.message}`
+              `\`${log.timestamp}\` ${log.level.toUpperCase()}: ${escapeMarkdownV2(log.message)}`
           )
           .slice(-10), // Show last 10 logs to avoid message length limits
         '',
         `Showing last ${Math.min(logs.length, 10)} of ${logs.length} logs`,
-      ].join('\\n');
+      ].join('\n');
 
       await ctx.replyWithMarkdownV2(logsText);
 
@@ -145,7 +150,7 @@ export class DeveloperService {
     const message = messageText.replace('/broadcast', '').trim();
     if (!message) {
       await ctx.reply(
-        '❌ Please provide a message to broadcast.\\nUsage: /broadcast <message>'
+        `❌ Please provide a message to broadcast${escapeMarkdownV2('.')}\nUsage: /broadcast <message>`
       );
       return;
     }
