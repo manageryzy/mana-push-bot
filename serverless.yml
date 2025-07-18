@@ -1,0 +1,98 @@
+service: mana-push-bot
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'us-east-1'}
+  timeout: 30
+  memorySize: 256
+  environment:
+    STAGE: ${self:provider.stage}
+    TELEGRAM_BOT_TOKEN: ${env:TELEGRAM_BOT_TOKEN}
+    WEBHOOK_URL: ${env:WEBHOOK_URL}
+    LOG_LEVEL: ${env:LOG_LEVEL, 'info'}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: 'arn:aws:logs:*:*:*'
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource:
+            - !GetAtt NotificationQueue.Arn
+
+plugins:
+  - serverless-plugin-typescript
+  - serverless-offline
+
+functions:
+  telegramBot:
+    handler: src/handlers/webhook.handler
+    events:
+      - http:
+          path: /webhook
+          method: post
+          cors: true
+    environment:
+      NOTIFICATION_QUEUE_URL: !Ref NotificationQueue
+
+  notificationProcessor:
+    handler: src/handlers/notification.handler
+    events:
+      - sqs:
+          arn: !GetAtt NotificationQueue.Arn
+          batchSize: 10
+          maximumBatchingWindowInSeconds: 5
+
+  healthCheck:
+    handler: src/handlers/health.handler
+    events:
+      - http:
+          path: /health
+          method: get
+          cors: true
+
+resources:
+  Resources:
+    NotificationQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-notifications
+        VisibilityTimeoutSeconds: 60
+        MessageRetentionPeriod: 1209600 # 14 days
+        ReceiveMessageWaitTimeSeconds: 20
+
+    NotificationDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-notifications-dlq
+        MessageRetentionPeriod: 1209600 # 14 days
+
+  Outputs:
+    WebhookUrl:
+      Description: 'Webhook URL for Telegram bot'
+      Value:
+        Fn::Join:
+          - ''
+          - - 'https://'
+            - Ref: ApiGatewayRestApi
+            - '.execute-api.'
+            - ${self:provider.region}
+            - '.amazonaws.com/'
+            - ${self:provider.stage}
+            - '/webhook'
+
+    NotificationQueueUrl:
+      Description: 'SQS Queue URL for notifications'
+      Value: !Ref NotificationQueue
