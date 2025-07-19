@@ -71,6 +71,18 @@ export class DeveloperService {
       usage: '/server_stop',
       adminOnly: true,
     },
+    {
+      command: '/subscribe',
+      description: 'Subscribe to a channel',
+      usage: '/subscribe <channelId>',
+      adminOnly: false,
+    },
+    {
+      command: '/unsubscribe',
+      description: 'Unsubscribe from a channel',
+      usage: '/unsubscribe <channelId>',
+      adminOnly: false,
+    },
   ];
 
   private startTime = Date.now();
@@ -119,16 +131,38 @@ export class DeveloperService {
     );
 
     try {
-      const stats = await this.getBotStats();
+      // Use MessageService and ChannelService for real stats - properly initialize ConfigService
+      const { MessageService } = require('@/services/messageService');
+      const { ChannelService } = require('@/services/channelService');
+      const { ConfigService } = require('@/services/configService');
+      const { TelegramService } = require('@/services/telegramService');
 
-      const response = [
+      const messageService = new MessageService();
+      const configService = new ConfigService();
+      await configService.initialize(); // This loads the bot-config.json file
+
+      const channelService = new ChannelService(
+        configService,
+        new TelegramService()
+      );
+      const stats = messageService.getStats();
+      const channels = await channelService.getAllChannels();
+      const totalChannels = channels.length;
+      const totalSubscribers = channels.reduce(
+        (sum, c) => sum + c.subscriberCount,
+        0
+      );
+
+      const responseText = [
         '📊 *Bot Statistics*',
         '',
-        `⚡ Uptime: ${formatUptime(stats.uptime)}`,
+        `⚡ Uptime: ${formatUptime((Date.now() - this.startTime) / 1000)}`,
         `💬 Total Messages: ${stats.totalMessages}`,
         `👥 Active Users: ${stats.activeUsers}`,
-        `❌ Error Count: ${stats.errorCount}`,
-        `🕐 Last Update: ${stats.lastUpdate}`,
+        `❌ Error Count: ${stats.errorCount ?? 0}`,
+        `🕐 Last Update: ${stats.lastUpdate ?? new Date().toISOString()}`,
+        `📢 Channels: ${totalChannels}`,
+        `👥 Subscribers: ${totalSubscribers}`,
         '',
         `💾 Memory Usage: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
         `🖥 Node.js: ${process.version}`,
@@ -136,7 +170,7 @@ export class DeveloperService {
         `📍 Region: ${config.aws.region}`,
       ].join('\n');
 
-      await ctx.replyWithMarkdownV2(escapeTelegramMarkdown(response));
+      await ctx.replyWithMarkdownV2(escapeTelegramMarkdown(responseText));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
@@ -161,7 +195,10 @@ export class DeveloperService {
     let response = '📋 *Recent Logs*';
 
     try {
-      const logs = await this.getRecentLogs(level, count);
+      // Use MessageService for real logs
+      const { MessageService } = require('@/services/messageService');
+      const messageService = new MessageService();
+      const logs = await messageService.getRecentMessages(count);
 
       response += [
         `📋 *Recent Logs (${level.toUpperCase()})*`,
@@ -169,7 +206,7 @@ export class DeveloperService {
         ...logs
           .map(
             log =>
-              `\`${log.timestamp}\` ${log.level.toUpperCase()}: ${log.message}`
+              `\`${log.timestamp}\` ${log.messageType.toUpperCase()}: ${log.text ?? ''}`
           )
           .slice(-10), // Show last 10 logs to avoid message length limits
         '',
@@ -271,8 +308,10 @@ export class DeveloperService {
     let response = '';
 
     try {
-      // In a real implementation, you might reload from environment or config files
-      // For now, we'll just refresh the current config and restart services if needed
+      // Use ConfigService to reload config - properly initialize it
+      const { ConfigService } = require('@/services/configService');
+      const configService = new ConfigService();
+      await configService.initialize(); // This loads/reloads the bot-config.json file
 
       response = [
         '🔄 *Configuration Reloaded*',
@@ -297,8 +336,6 @@ export class DeveloperService {
         oldPort,
         newPort: config.app.port,
       });
-
-      // TODO: reload
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
@@ -317,21 +354,19 @@ export class DeveloperService {
     let response = '📢 *Message Channels*';
 
     try {
-      // TODO: Get channels from ChannelService when integrated
-      const channels = [
-        {
-          id: 'example-channel',
-          name: 'Example Channel',
-          isPublic: true,
-          subscriberCount: 0,
-        },
-        {
-          id: 'alerts',
-          name: 'System Alerts',
-          isPublic: false,
-          subscriberCount: 5,
-        },
-      ];
+      // Use ChannelService for real channels - properly initialize ConfigService
+      const { ChannelService } = require('@/services/channelService');
+      const { ConfigService } = require('@/services/configService');
+      const { TelegramService } = require('@/services/telegramService');
+
+      const configService = new ConfigService();
+      await configService.initialize(); // This loads the bot-config.json file
+
+      const channelService = new ChannelService(
+        configService,
+        new TelegramService()
+      );
+      const channels = await channelService.getAllChannels();
 
       if (channels.length === 0) {
         await ctx.reply(
@@ -348,7 +383,6 @@ export class DeveloperService {
         )
         .join('\n\n');
 
-      // Fix for the angle brackets issue - we'll avoid using them in MarkdownV2
       response = [
         '📢 *Message Channels*',
         '',
@@ -456,12 +490,12 @@ export class DeveloperService {
       ctx.message && 'text' in ctx.message ? ctx.message.text : '';
     const args = messageText.split(' ').slice(1);
     const name = args[0];
-    const chatId = args[1];
-    const description = args.slice(2).join(' ') || undefined;
+    const description = args.slice(1).join(' ') || undefined;
+    const chatId = ctx.chat?.id;
 
     if (!name || !chatId) {
       await ctx.reply(
-        '❌ Usage: /channel_create <name> <chatId> [description]\n\nExample: /channel_create alerts -1001234567890 System alerts'
+        '❌ Usage: /channel_create <name> [description]\n\nExample: /channel_create alerts System alerts'
       );
       return;
     }
@@ -469,21 +503,41 @@ export class DeveloperService {
     let response = '📢 *Creating Channel*';
 
     try {
-      // TODO: Implement with ChannelService when integrated
-      const channelId = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      // Use ChannelService for real channel creation - properly initialize ConfigService
+      const { ChannelService } = require('@/services/channelService');
+      const { ConfigService } = require('@/services/configService');
+      const { TelegramService } = require('@/services/telegramService');
 
+      const configService = new ConfigService();
+      await configService.initialize(); // This loads the bot-config.json file
+
+      const channelService = new ChannelService(
+        configService,
+        new TelegramService()
+      );
+      const createdChannel = await channelService.createChannel({
+        name,
+        chatId,
+        description,
+        isPublic: true,
+        createdBy: ctx.from?.id || 0,
+      });
       response = [
         '✅ *Channel Created Successfully*',
         '',
-        `*Name:* ${name}`,
-        `*Channel ID:* ${channelId}`,
-        `*Chat ID:* ${chatId}`,
-        ...(description ? [`*Description:* ${description}`] : []),
+        `*Name:* ${createdChannel.name}`,
+        `*Channel ID:* ${createdChannel.id}`,
+        `*Chat ID:* ${createdChannel.chatId}`,
+        ...(createdChannel.description
+          ? [`*Description:* ${createdChannel.description}`]
+          : []),
         '',
         '*Push URL:*',
-        `${config.app.baseUrl}/push/${channelId}`,
+        `${config.app.baseUrl}/push/${createdChannel.id}`,
         '',
-        '💡 Use /push_url ' + channelId + ' to get detailed usage information.',
+        '💡 Use /push_url ' +
+          createdChannel.id +
+          ' to get detailed usage information.',
       ].join('\n');
 
       await ctx.reply(escapeTelegramMarkdown(response), {
@@ -496,7 +550,7 @@ export class DeveloperService {
       logDeveloperCommand(
         ctx.from?.id || 0,
         'channel_create',
-        [name, chatId],
+        [name, String(chatId)],
         response,
         false
       );
@@ -525,7 +579,19 @@ export class DeveloperService {
     let response = '🗑️ *Deleting Channel*';
 
     try {
-      // TODO: Implement with ChannelService when integrated
+      // Use ChannelService for real channel deletion - properly initialize ConfigService
+      const { ChannelService } = require('@/services/channelService');
+      const { ConfigService } = require('@/services/configService');
+      const { TelegramService } = require('@/services/telegramService');
+
+      const configService = new ConfigService();
+      await configService.initialize(); // This loads the bot-config.json file
+
+      const channelService = new ChannelService(
+        configService,
+        new TelegramService()
+      );
+      await channelService.deleteChannel(channelId);
       response = [
         '🗑️ *Channel Deleted*',
         '',
@@ -623,38 +689,202 @@ export class DeveloperService {
     }
   }
 
+  public async handleSubscribeCommand(ctx: BotContext): Promise<void> {
+    const messageText =
+      ctx.message && 'text' in ctx.message ? ctx.message.text : '';
+    const args = messageText.split(' ').slice(1);
+    const channelId = args[0];
+
+    if (!channelId) {
+      await ctx.reply(
+        '❌ Usage: /subscribe <channelId>\n\nExample: /subscribe alerts\n\nUse /channels to see available channels.'
+      );
+      return;
+    }
+
+    const userId = ctx.from?.id;
+    const chatId = ctx.chat?.id;
+
+    if (!userId || !chatId) {
+      await ctx.reply('❌ Unable to identify user or chat. Please try again.');
+      return;
+    }
+
+    try {
+      // Initialize services properly
+      const { ChannelService } = require('@/services/channelService');
+      const { ConfigService } = require('@/services/configService');
+      const { TelegramService } = require('@/services/telegramService');
+
+      const configService = new ConfigService();
+      await configService.initialize(); // Load bot-config.json
+
+      const channelService = new ChannelService(
+        configService,
+        new TelegramService()
+      );
+
+      // Check if channel exists
+      const channel = await channelService.getChannel(channelId);
+      if (!channel) {
+        await ctx.reply(
+          `❌ Channel "${channelId}" not found.\n\nUse /channels to see available channels.`
+        );
+        return;
+      }
+
+      // Subscribe user to channel using the existing subscribe method
+      const subscribeResult = await channelService.subscribe(
+        userId,
+        channelId,
+        chatId
+      );
+
+      if (!subscribeResult.success) {
+        await ctx.reply(`❌ ${subscribeResult.message}`);
+        return;
+      }
+
+      const response = [
+        '✅ *Subscription Successful*',
+        '',
+        `*Channel:* ${channel.name}`,
+        `*Channel ID:* ${channelId}`,
+        `*Description:* ${channel.description || 'No description'}`,
+        '',
+        'You will now receive notifications from this channel.',
+        '',
+        '💡 Use /unsubscribe ' + channelId + ' to unsubscribe later.',
+      ].join('\n');
+
+      await ctx.reply(escapeTelegramMarkdown(response), {
+        parse_mode: 'MarkdownV2',
+      });
+
+      logger.info('User subscribed to channel', {
+        userId,
+        chatId,
+        channelId,
+        channelName: channel.name,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      await ctx.reply(`❌ Failed to subscribe to channel: ${errorMessage}`);
+      logger.error('Subscribe command failed', {
+        error: errorMessage,
+        userId,
+        chatId,
+        channelId,
+      });
+    }
+  }
+
+  public async handleUnsubscribeCommand(ctx: BotContext): Promise<void> {
+    const messageText =
+      ctx.message && 'text' in ctx.message ? ctx.message.text : '';
+    const args = messageText.split(' ').slice(1);
+    const channelId = args[0];
+
+    if (!channelId) {
+      await ctx.reply(
+        '❌ Usage: /unsubscribe <channelId>\n\nExample: /unsubscribe alerts\n\nUse /channels to see available channels.'
+      );
+      return;
+    }
+
+    const userId = ctx.from?.id;
+
+    if (!userId) {
+      await ctx.reply('❌ Unable to identify user. Please try again.');
+      return;
+    }
+
+    try {
+      // Initialize services properly
+      const { ChannelService } = require('@/services/channelService');
+      const { ConfigService } = require('@/services/configService');
+      const { TelegramService } = require('@/services/telegramService');
+
+      const configService = new ConfigService();
+      await configService.initialize(); // Load bot-config.json
+
+      const channelService = new ChannelService(
+        configService,
+        new TelegramService()
+      );
+
+      // Check if channel exists
+      const channel = await channelService.getChannel(channelId);
+      if (!channel) {
+        await ctx.reply(
+          `❌ Channel "${channelId}" not found.\n\nUse /channels to see available channels.`
+        );
+        return;
+      }
+
+      // Unsubscribe user from channel using the existing unsubscribe method
+      const unsubscribeResult = await channelService.unsubscribe(
+        userId,
+        channelId
+      );
+
+      if (!unsubscribeResult.success) {
+        await ctx.reply(`❌ ${unsubscribeResult.message}`);
+        return;
+      }
+
+      const response = [
+        '✅ *Unsubscription Successful*',
+        '',
+        `*Channel:* ${channel.name}`,
+        `*Channel ID:* ${channelId}`,
+        '',
+        'You will no longer receive notifications from this channel.',
+        '',
+        '💡 Use /subscribe ' + channelId + ' to subscribe again later.',
+      ].join('\n');
+
+      await ctx.reply(escapeTelegramMarkdown(response), {
+        parse_mode: 'MarkdownV2',
+      });
+
+      logger.info('User unsubscribed from channel', {
+        userId,
+        channelId,
+        channelName: channel.name,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      await ctx.reply(`❌ Failed to unsubscribe from channel: ${errorMessage}`);
+      logger.error('Unsubscribe command failed', {
+        error: errorMessage,
+        userId,
+        channelId,
+      });
+    }
+  }
+
   public isAdmin(userId?: number): boolean {
     if (!userId) return false;
     return config.developer.adminUserIds.includes(userId);
   }
 
   private async getBotStats(): Promise<BotStats> {
-    const uptime = (Date.now() - this.startTime) / 1000;
-
+    // Deprecated: now handled in handleStatsCommand
     return {
-      totalMessages: 0, // TODO: Get from MessageService
-      activeUsers: 0, // TODO: Get from MessageService
-      errorCount: 0, // TODO: Track errors
-      uptime,
+      totalMessages: 0,
+      activeUsers: 0,
+      errorCount: 0,
+      uptime: (Date.now() - this.startTime) / 1000,
       lastUpdate: new Date().toISOString(),
     };
   }
 
   private async getRecentLogs(_level: string, _count: number): Promise<any[]> {
-    // TODO: Implement log retrieval from CloudWatch or local storage
-    // For now, return mock logs
-    return [
-      {
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        message: 'Bot started successfully',
-      },
-      {
-        timestamp: new Date(Date.now() - 60000).toISOString(),
-        level: 'info',
-        message: 'Webhook configured',
-      },
-    ];
+    // Deprecated: now handled in handleLogsCommand
+    return [];
   }
 
   public getCommands(): DeveloperCommand[] {

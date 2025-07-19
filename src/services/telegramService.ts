@@ -28,6 +28,8 @@ export class TelegramService {
         { command: 'help', description: 'Show help message' },
         { command: 'status', description: 'Show bot status' },
         { command: 'menu', description: 'Show main menu' },
+        { command: 'subscribe', description: 'Subscribe to a channel' },
+        { command: 'unsubscribe', description: 'Unsubscribe from a channel' },
         { command: 'dev', description: 'Developer menu (admin only)' },
         { command: 'stats', description: 'Bot statistics (admin only)' },
         {
@@ -123,14 +125,17 @@ export class TelegramService {
         '/status - Show bot status',
         '/menu - Show interactive menu',
         '',
-        '🔧 *Developer Commands:*',
+        '� *Subscriptions:*',
+        '/subscribe <channelId> - Subscribe to a channel',
+        '/channels - List available channels (admin only)',
+        '',
+        '�🔧 *Developer Commands:*',
         '/dev - Show developer menu (admin only)',
         '/stats - Show bot statistics (admin only)',
         '/logs - Show recent logs (admin only)',
         '/reload - Reload configuration (admin only)',
         '',
         '📢 *Channel Management:*',
-        '/channels - List all message channels (admin only)',
         '/push_url <channelId> - Get push URL for channel (admin only)',
         '/channel_create <name> <chatId> - Create new channel (admin only)',
         '/channel_delete <channelId> - Delete channel (admin only)',
@@ -510,6 +515,14 @@ export class TelegramService {
     );
     this.bot.command('server_stop', ctx =>
       this.developerService.handleServerStopCommand(ctx)
+    );
+
+    // User commands (non-admin)
+    this.bot.command('subscribe', ctx =>
+      this.developerService.handleSubscribeCommand(ctx)
+    );
+    this.bot.command('unsubscribe', ctx =>
+      this.developerService.handleUnsubscribeCommand(ctx)
     );
 
     // Message logging for all text messages

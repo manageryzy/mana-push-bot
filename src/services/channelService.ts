@@ -17,6 +17,7 @@ export interface Channel {
 
 export interface ChannelSubscription {
   userId: number;
+  chatId: number;
   channelId: string;
   subscribedAt: string;
   isActive: boolean;
@@ -209,7 +210,8 @@ export class ChannelService {
 
   async subscribe(
     userId: number,
-    channelId: string
+    channelId: string,
+    chatId: number
   ): Promise<{ success: boolean; message: string }> {
     try {
       const channel = await this.getChannel(channelId);
@@ -245,10 +247,12 @@ export class ChannelService {
 
       if (inactiveSubscription) {
         inactiveSubscription.isActive = true;
+        inactiveSubscription.chatId = chatId; // Update chatId in case it changed
         inactiveSubscription.subscribedAt = new Date().toISOString();
       } else {
         const newSubscription: ChannelSubscription = {
           userId,
+          chatId,
           channelId,
           subscribedAt: new Date().toISOString(),
           isActive: true,
@@ -352,14 +356,56 @@ export class ChannelService {
     }
   }
 
-  async getChannelSubscribers(channelId: string): Promise<number[]> {
+  async getChannelSubscribers(
+    channelId: string
+  ): Promise<ChannelSubscription[]> {
     try {
       const config = await this.configService.getConfig();
       const subscriptions = config.channelSubscriptions || [];
 
-      return subscriptions
-        .filter(s => s.channelId === channelId && s.isActive)
-        .map(s => s.userId);
+      // Apply backward compatibility ONLY for subscriptions that completely lack chatId
+      let hasUpdates = false;
+      const fixedSubscriptions = subscriptions.map(s => {
+        if (s.chatId === undefined || s.chatId === null) {
+          hasUpdates = true;
+          logger.info(
+            'Applying backward compatibility for subscription missing chatId',
+            {
+              userId: s.userId,
+              channelId: s.channelId,
+            }
+          );
+          return {
+            ...s,
+            chatId: s.userId, // Use userId as chatId for backward compatibility
+          };
+        }
+        return s;
+      });
+
+      // If we made fixes, save them back to the config
+      if (hasUpdates) {
+        await this.configService.updateConfig({
+          channelSubscriptions: fixedSubscriptions,
+        });
+        logger.info('Fixed missing chatId fields in subscriptions', {
+          fixedCount: fixedSubscriptions.filter(s => s.chatId === s.userId)
+            .length,
+        });
+      }
+
+      const result = fixedSubscriptions.filter(
+        s => s.channelId === channelId && s.isActive
+      );
+
+      // Debug logging to see what subscribers are returned
+      logger.info('Channel subscribers retrieved', {
+        channelId,
+        subscriberCount: result.length,
+        subscribers: result.map(s => ({ userId: s.userId, chatId: s.chatId })),
+      });
+
+      return result;
     } catch (error) {
       logger.error('Failed to get channel subscribers', { channelId, error });
       return [];

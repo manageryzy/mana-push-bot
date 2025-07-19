@@ -82,6 +82,15 @@ export class MessagePushService {
         data.channelId
       );
 
+      logger.info('Message push subscribers debug', {
+        channelId: data.channelId,
+        subscriberCount: subscribers.length,
+        subscriberDetails: subscribers.map(s => ({
+          userId: s.userId,
+          chatId: s.chatId,
+        })),
+      });
+
       // Format message based on specified format
       const formattedMessage = this.formatMessage(
         data.message,
@@ -124,8 +133,14 @@ export class MessagePushService {
 
       if (subscribers.length > 0) {
         const subscriberResults = await Promise.allSettled(
-          subscribers.map(async userId => {
+          subscribers.map(async subscription => {
             try {
+              logger.info('Attempting to send message to subscriber', {
+                userId: subscription.userId,
+                chatId: subscription.chatId,
+                channelId: data.channelId,
+              });
+
               const subscriberOptions: any = {
                 link_preview_options: { is_disabled: true },
               };
@@ -136,18 +151,35 @@ export class MessagePushService {
               }
 
               await bot.telegram.sendMessage(
-                userId,
+                subscription.chatId,
                 formattedMessage,
                 subscriberOptions
               );
-              return { success: true, userId };
-            } catch (error) {
-              logger.warn('Failed to send message to subscriber', {
+
+              logger.info('Successfully sent message to subscriber', {
+                userId: subscription.userId,
+                chatId: subscription.chatId,
                 channelId: data.channelId,
-                userId,
-                error,
               });
-              return { success: false, userId, error };
+
+              return {
+                success: true,
+                userId: subscription.userId,
+                chatId: subscription.chatId,
+              };
+            } catch (error) {
+              logger.error('Failed to send message to subscriber', {
+                channelId: data.channelId,
+                userId: subscription.userId,
+                chatId: subscription.chatId,
+                error: error instanceof Error ? error.message : error,
+              });
+              return {
+                success: false,
+                userId: subscription.userId,
+                chatId: subscription.chatId,
+                error,
+              };
             }
           })
         );
