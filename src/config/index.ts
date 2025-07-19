@@ -15,7 +15,8 @@ export const config = {
   app: {
     stage: process.env.STAGE || 'dev',
     logLevel: process.env.LOG_LEVEL || 'info',
-    port: parseInt(process.env.PORT || '3000'),
+    port: parseInt(process.env.PORT || '3001'),
+    baseUrl: process.env.BASE_URL || 'http://localhost:3001',
   },
   developer: {
     adminUserIds:

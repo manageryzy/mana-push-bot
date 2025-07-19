@@ -6,7 +6,11 @@ A modern TypeScript Telegram bot running on AWS Lambda with comprehensive notifi
 
 - 📨 **Message Logging**: Receive and log all incoming messages with metadata
 - 🔧 **Developer Tools**: Built-in developer commands and bot information utilities
-- 📢 **Notifications**: Send notifications to channels, groups, and users
+- 📢 **Channel Management**: Create and manage message channels with subscription system
+- 🌐 **HTTP Push API**: REST API endpoint for sending messages to channels
+- 🔗 **Webhook Support**: Direct webhook URLs for each channel
+- 👥 **Subscription System**: Users can subscribe/unsubscribe to channels
+- 💾 **Persistent Configuration**: All settings and channels saved to local storage
 - 🚀 **Multiple Triggers**: Support for both HTTP webhook and SQS message queue
 - ☁️ **Serverless**: Runs on AWS Lambda with auto-scaling
 - 📊 **Monitoring**: Health checks, logging, and statistics
@@ -127,6 +131,98 @@ npm run logs
 - `/logs [level] [count]` - Show recent logs
 - `/broadcast <message>` - Broadcast message to all users
 - `/reload` - Reload bot configuration
+
+#### Channel Management (Admin Only)
+
+- `/channels` - List all message channels
+- `/channel_create <name> <chatId> [description]` - Create a new channel
+- `/channel_delete <channelId>` - Delete a channel
+- `/push_url <channelId>` - Get push URL for a channel
+- `/server_start [port]` - Start HTTP server
+- `/server_stop` - Stop HTTP server
+
+#### Subscription Commands
+
+- `/subscribe <channelId>` - Subscribe to a channel
+- `/unsubscribe <channelId>` - Unsubscribe from a channel
+- `/my_channels` - List your subscribed channels
+
+### Channel Message Pushing
+
+#### Via HTTP API (New Feature!)
+
+```bash
+# Send a message to a specific channel
+curl -X POST http://localhost:3000/push/my-channel \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "message": "Hello from the push API!",
+    "format": "markdown",
+    "priority": "normal",
+    "metadata": {
+      "source": "monitoring-system",
+      "alert_level": "info"
+    }
+  }'
+
+# Alternative URL format
+curl -X POST http://localhost:3000/push \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "channel": "my-channel",
+    "message": "**Important Update**: System maintenance completed successfully.",
+    "format": "markdown",
+    "priority": "high"
+  }'
+```
+
+#### Message Formats
+
+- **text** - Plain text message
+- **markdown** - MarkdownV2 formatted message (default)
+- **html** - HTML formatted message
+
+#### Priority Levels
+
+- **low** - 📋 Info messages with subtle formatting
+- **normal** - Standard messages (default)
+- **high** - 🚨 High priority messages with alert formatting
+
+### Managing Channels
+
+#### Creating Channels (Admin)
+
+```bash
+# Get push URL for a channel
+curl "http://localhost:3000/api/admin/push-url/my-channel?userId=123456789"
+
+# Create a new channel
+curl -X POST http://localhost:3000/api/channels \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "name": "alerts",
+    "description": "System alerts and notifications",
+    "chatId": -1001234567890,
+    "isPublic": true,
+    "userId": 123456789
+  }'
+
+# List all channels
+curl "http://localhost:3000/api/channels?userId=123456789"
+```
+
+#### Subscription Management
+
+```bash
+# Subscribe to a channel
+curl -X POST "http://localhost:3000/api/subscribe/alerts?userId=123456789"
+
+# Unsubscribe from a channel
+curl -X DELETE "http://localhost:3000/api/subscribe/alerts?userId=123456789"
+
+# Get user's subscriptions
+curl "http://localhost:3000/api/subscriptions?userId=123456789"
+```
 
 ### Sending Notifications
 

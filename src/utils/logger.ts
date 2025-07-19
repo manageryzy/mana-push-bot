@@ -68,12 +68,14 @@ export function logDeveloperCommand(
   userId: number,
   command: string,
   args: string[],
+  response: any,
   success: boolean
 ): void {
   logger.info('Developer command executed', {
     userId,
     command,
     args,
+    response,
     success,
   });
 }

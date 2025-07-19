@@ -6,7 +6,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
+    "simple:dev": "tsx watch src/simpleApp.ts",
     "start": "node dist/index.js",
+    "simple:start": "node dist/simpleApp.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -27,14 +29,16 @@
     "aws-lambda": "^1.0.7",
     "aws-sdk": "^2.1691.0",
     "axios": "^1.6.0",
-    "telegraf": "^4.15.6",
     "dotenv": "^16.3.1",
-    "winston": "^3.11.0",
+    "express": "^5.1.0",
     "joi": "^17.11.0",
-    "uuid": "^9.0.1"
+    "telegraf": "^4.15.6",
+    "uuid": "^9.0.1",
+    "winston": "^3.11.0"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.128",
+    "@types/express": "^5.0.3",
     "@types/jest": "^29.5.8",
     "@types/node": "^20.9.0",
     "@types/uuid": "^9.0.7",

@@ -30,6 +30,30 @@ export class TelegramService {
         { command: 'menu', description: 'Show main menu' },
         { command: 'dev', description: 'Developer menu (admin only)' },
         { command: 'stats', description: 'Bot statistics (admin only)' },
+        {
+          command: 'channels',
+          description: 'List message channels (admin only)',
+        },
+        {
+          command: 'push_url',
+          description: 'Get push URL for channel (admin only)',
+        },
+        {
+          command: 'channel_create',
+          description: 'Create new channel (admin only)',
+        },
+        {
+          command: 'channel_delete',
+          description: 'Delete channel (admin only)',
+        },
+        {
+          command: 'server_start',
+          description: 'Start HTTP server (admin only)',
+        },
+        {
+          command: 'server_stop',
+          description: 'Stop HTTP server (admin only)',
+        },
       ]);
       logger.info('Bot menu commands set successfully');
     } catch (error) {
@@ -103,6 +127,17 @@ export class TelegramService {
         '/dev - Show developer menu (admin only)',
         '/stats - Show bot statistics (admin only)',
         '/logs - Show recent logs (admin only)',
+        '/reload - Reload configuration (admin only)',
+        '',
+        '📢 *Channel Management:*',
+        '/channels - List all message channels (admin only)',
+        '/push_url <channelId> - Get push URL for channel (admin only)',
+        '/channel_create <name> <chatId> - Create new channel (admin only)',
+        '/channel_delete <channelId> - Delete channel (admin only)',
+        '',
+        '🌐 *Server Management:*',
+        '/server_start - Start HTTP server (admin only)',
+        '/server_stop - Stop HTTP server (admin only)',
         '',
         '📨 *Notifications:*',
         'This bot receives notifications via webhook and SQS',
@@ -113,6 +148,8 @@ export class TelegramService {
 
     // Interactive menu command
     this.bot.command('menu', async ctx => {
+      const isAdmin = this.developerService.isAdmin(ctx.from?.id);
+
       const keyboard = {
         inline_keyboard: [
           [
@@ -123,6 +160,22 @@ export class TelegramService {
             { text: '🔧 Settings', callback_data: 'settings' },
             { text: '📝 About', callback_data: 'about' },
           ],
+          ...(isAdmin
+            ? [
+                [
+                  { text: '🔧 Developer', callback_data: 'developer' },
+                  { text: '📊 Stats', callback_data: 'bot_stats' },
+                ],
+                [
+                  { text: '📢 Channels', callback_data: 'channels' },
+                  { text: '🔗 Push URLs', callback_data: 'push_urls' },
+                ],
+                [
+                  { text: '🌐 Server', callback_data: 'server_management' },
+                  { text: '📝 Logs', callback_data: 'logs' },
+                ],
+              ]
+            : []),
         ],
       };
 
@@ -240,6 +293,8 @@ export class TelegramService {
 
           case 'back_to_menu': {
             await ctx.answerCbQuery();
+            const isAdmin = this.developerService.isAdmin(ctx.from?.id);
+
             const backKeyboard = {
               inline_keyboard: [
                 [
@@ -250,12 +305,152 @@ export class TelegramService {
                   { text: '🔧 Settings', callback_data: 'settings' },
                   { text: '📝 About', callback_data: 'about' },
                 ],
+                ...(isAdmin
+                  ? [
+                      [
+                        { text: '🔧 Developer', callback_data: 'developer' },
+                        { text: '📊 Stats', callback_data: 'bot_stats' },
+                      ],
+                      [
+                        { text: '📢 Channels', callback_data: 'channels' },
+                        { text: '🔗 Push URLs', callback_data: 'push_urls' },
+                      ],
+                      [
+                        {
+                          text: '🌐 Server',
+                          callback_data: 'server_management',
+                        },
+                        { text: '📝 Logs', callback_data: 'logs' },
+                      ],
+                    ]
+                  : []),
               ],
             };
             await ctx.editMessageText('🎛️ *Main Menu*\n\nChoose an option:', {
               parse_mode: 'MarkdownV2',
               reply_markup: backKeyboard,
             });
+            break;
+          }
+
+          case 'developer': {
+            await ctx.answerCbQuery();
+            await this.developerService.handleDevCommand(ctx);
+            break;
+          }
+
+          case 'bot_stats': {
+            await ctx.answerCbQuery();
+            await this.developerService.handleStatsCommand(ctx);
+            break;
+          }
+
+          case 'channels': {
+            await ctx.answerCbQuery();
+            await this.developerService.handleChannelsCommand(ctx);
+            break;
+          }
+
+          case 'push_urls': {
+            await ctx.answerCbQuery();
+            const pushUrlsKeyboard = {
+              inline_keyboard: [
+                [
+                  {
+                    text: '📝 Enter Channel ID',
+                    callback_data: 'push_url_input',
+                  },
+                ],
+                [{ text: '⬅️ Back to Menu', callback_data: 'back_to_menu' }],
+              ],
+            };
+            await ctx.editMessageText(
+              '🔗 *Push URL Management*\n\n' +
+                'To get a push URL, use:\n' +
+                escapeMarkdownV2('/push_url <channelId>') +
+                '\n\n' +
+                'Example: ' +
+                escapeMarkdownV2('/push_url alerts'),
+              {
+                parse_mode: 'MarkdownV2',
+                reply_markup: pushUrlsKeyboard,
+              }
+            );
+            break;
+          }
+
+          case 'server_management': {
+            await ctx.answerCbQuery();
+            const serverKeyboard = {
+              inline_keyboard: [
+                [
+                  { text: '🚀 Server Status', callback_data: 'server_status' },
+                  {
+                    text: '⏹️ Server Control',
+                    callback_data: 'server_control',
+                  },
+                ],
+                [{ text: '⬅️ Back to Menu', callback_data: 'back_to_menu' }],
+              ],
+            };
+            await ctx.editMessageText(
+              '🌐 *Server Management*\n\n' +
+                'Manage the HTTP server for message pushing:',
+              {
+                parse_mode: 'MarkdownV2',
+                reply_markup: serverKeyboard,
+              }
+            );
+            break;
+          }
+
+          case 'server_status': {
+            await ctx.answerCbQuery();
+            await this.developerService.handleServerStartCommand(ctx);
+            break;
+          }
+
+          case 'server_control': {
+            await ctx.answerCbQuery();
+            const controlKeyboard = {
+              inline_keyboard: [
+                [
+                  { text: '🚀 Start Server', callback_data: 'start_server' },
+                  { text: '⏹️ Stop Server', callback_data: 'stop_server' },
+                ],
+                [
+                  {
+                    text: '⬅️ Back to Server Menu',
+                    callback_data: 'server_management',
+                  },
+                ],
+              ],
+            };
+            await ctx.editMessageText(
+              '🎛️ *Server Control*\n\n' + 'Choose an action:',
+              {
+                parse_mode: 'MarkdownV2',
+                reply_markup: controlKeyboard,
+              }
+            );
+            break;
+          }
+
+          case 'start_server': {
+            await ctx.answerCbQuery();
+            await this.developerService.handleServerStartCommand(ctx);
+            break;
+          }
+
+          case 'stop_server': {
+            await ctx.answerCbQuery();
+            await this.developerService.handleServerStopCommand(ctx);
+            break;
+          }
+
+          case 'logs': {
+            await ctx.answerCbQuery();
+            await this.developerService.handleLogsCommand(ctx);
             break;
           }
 
@@ -294,6 +489,27 @@ export class TelegramService {
     );
     this.bot.command('logs', ctx =>
       this.developerService.handleLogsCommand(ctx)
+    );
+    this.bot.command('reload', ctx =>
+      this.developerService.handleReloadCommand(ctx)
+    );
+    this.bot.command('channels', ctx =>
+      this.developerService.handleChannelsCommand(ctx)
+    );
+    this.bot.command('push_url', ctx =>
+      this.developerService.handlePushUrlCommand(ctx)
+    );
+    this.bot.command('channel_create', ctx =>
+      this.developerService.handleChannelCreateCommand(ctx)
+    );
+    this.bot.command('channel_delete', ctx =>
+      this.developerService.handleChannelDeleteCommand(ctx)
+    );
+    this.bot.command('server_start', ctx =>
+      this.developerService.handleServerStartCommand(ctx)
+    );
+    this.bot.command('server_stop', ctx =>
+      this.developerService.handleServerStopCommand(ctx)
     );
 
     // Message logging for all text messages
@@ -367,5 +583,30 @@ export class TelegramService {
 
   public getBot(): Telegraf<BotContext> {
     return this.bot;
+  }
+
+  public async start(): Promise<void> {
+    try {
+      logger.info('Starting Telegram bot...');
+      await this.bot.launch();
+      logger.info('Telegram bot started successfully');
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Failed to start Telegram bot', { error: errorMessage });
+      throw error;
+    }
+  }
+
+  public async stop(): Promise<void> {
+    try {
+      logger.info('Stopping Telegram bot...');
+      this.bot.stop();
+      logger.info('Telegram bot stopped');
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Failed to stop Telegram bot', { error: errorMessage });
+    }
   }
 }
