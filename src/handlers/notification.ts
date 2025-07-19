@@ -55,9 +55,12 @@ export const handler = async (
       }
     });
   } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
     logger.error('Notification handler error', {
-      error: error.message,
-      stack: error.stack,
+      error: errorMessage,
+      stack: errorStack,
       requestId: context.awsRequestId,
     });
 
@@ -109,9 +112,11 @@ async function processNotificationRecord(record: SQSRecord): Promise<boolean> {
 
     return true;
   } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
     logger.error('Error processing notification record', {
       messageId: record.messageId,
-      error: error.message,
+      error: errorMessage,
     });
 
     // Re-throw to trigger SQS retry/DLQ mechanism
@@ -183,9 +188,12 @@ export const httpHandler = async (
       }),
     };
   } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
     logger.error('HTTP notification handler error', {
-      error: error.message,
-      stack: error.stack,
+      error: errorMessage,
+      stack: errorStack,
     });
 
     return {

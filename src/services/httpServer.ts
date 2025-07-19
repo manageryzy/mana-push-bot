@@ -161,20 +161,25 @@ export class HttpServer {
         message,
         format,
         priority,
-        metadata,
+        metadata: metadata || {},
         timestamp: new Date().toISOString(),
       });
 
-      res.json(this.createResponse(true, result));
+      return res.json(this.createResponse(true, result));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
       logger.error('Failed to push message', { error: errorMessage });
-      res.status(500).json(this.createResponse(false, null, errorMessage));
+      return res
+        .status(500)
+        .json(this.createResponse(false, null, errorMessage));
     }
   }
 
-  private async handleGetChannels(req: Request, res: Response): Promise<void> {
+  private async handleGetChannels(
+    req: Request,
+    res: Response
+  ): Promise<Response> {
     try {
       const userId = this.extractUserId(req);
       if (!this.isAdmin(userId)) {
@@ -184,20 +189,28 @@ export class HttpServer {
       }
 
       const channels = await this.channelService.getAllChannels();
-      res.json(this.createResponse(true, channels));
+      return res.json(this.createResponse(true, channels));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json(this.createResponse(false, null, errorMessage));
+      return res
+        .status(500)
+        .json(this.createResponse(false, null, errorMessage));
     }
   }
 
   private async handleCreateChannel(
     req: Request,
     res: Response
-  ): Promise<void> {
+  ): Promise<Response> {
     try {
       const userId = this.extractUserId(req);
+      if (!userId) {
+        return res
+          .status(401)
+          .json(this.createResponse(false, null, 'Authentication required'));
+      }
+
       if (!this.isAdmin(userId)) {
         return res
           .status(403)
@@ -221,18 +234,20 @@ export class HttpServer {
         createdBy: userId,
       });
 
-      res.status(201).json(this.createResponse(true, channel));
+      return res.status(201).json(this.createResponse(true, channel));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json(this.createResponse(false, null, errorMessage));
+      return res
+        .status(500)
+        .json(this.createResponse(false, null, errorMessage));
     }
   }
 
   private async handleUpdateChannel(
     req: Request,
     res: Response
-  ): Promise<void> {
+  ): Promise<Response> {
     try {
       const userId = this.extractUserId(req);
       if (!this.isAdmin(userId)) {
@@ -254,18 +269,20 @@ export class HttpServer {
           .json(this.createResponse(false, null, 'Channel not found'));
       }
 
-      res.json(this.createResponse(true, channel));
+      return res.json(this.createResponse(true, channel));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json(this.createResponse(false, null, errorMessage));
+      return res
+        .status(500)
+        .json(this.createResponse(false, null, errorMessage));
     }
   }
 
   private async handleDeleteChannel(
     req: Request,
     res: Response
-  ): Promise<void> {
+  ): Promise<Response> {
     try {
       const userId = this.extractUserId(req);
       if (!this.isAdmin(userId)) {
@@ -283,15 +300,20 @@ export class HttpServer {
           .json(this.createResponse(false, null, 'Channel not found'));
       }
 
-      res.json(this.createResponse(true, { deleted: true }));
+      return res.json(this.createResponse(true, { deleted: true }));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json(this.createResponse(false, null, errorMessage));
+      return res
+        .status(500)
+        .json(this.createResponse(false, null, errorMessage));
     }
   }
 
-  private async handleSubscribe(req: Request, res: Response): Promise<void> {
+  private async handleSubscribe(
+    req: Request,
+    res: Response
+  ): Promise<Response> {
     try {
       const userId = this.extractUserId(req);
       if (!userId) {
@@ -299,19 +321,34 @@ export class HttpServer {
           .status(401)
           .json(this.createResponse(false, null, 'Authentication required'));
       }
+      const chatId = req.body.chatId || req.query.chatId;
+      if (!chatId) {
+        return res
+          .status(400)
+          .json(this.createResponse(false, null, 'Chat ID is required'));
+      }
 
       const { channelId } = req.params;
-      const result = await this.channelService.subscribe(userId, channelId);
+      const result = await this.channelService.subscribe(
+        userId,
+        channelId,
+        chatId
+      );
 
-      res.json(this.createResponse(true, result));
+      return res.json(this.createResponse(true, result));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json(this.createResponse(false, null, errorMessage));
+      return res
+        .status(500)
+        .json(this.createResponse(false, null, errorMessage));
     }
   }
 
-  private async handleUnsubscribe(req: Request, res: Response): Promise<void> {
+  private async handleUnsubscribe(
+    req: Request,
+    res: Response
+  ): Promise<Response> {
     try {
       const userId = this.extractUserId(req);
       if (!userId) {
@@ -323,18 +360,20 @@ export class HttpServer {
       const { channelId } = req.params;
       const result = await this.channelService.unsubscribe(userId, channelId);
 
-      res.json(this.createResponse(true, result));
+      return res.json(this.createResponse(true, result));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json(this.createResponse(false, null, errorMessage));
+      return res
+        .status(500)
+        .json(this.createResponse(false, null, errorMessage));
     }
   }
 
   private async handleGetSubscriptions(
     req: Request,
     res: Response
-  ): Promise<void> {
+  ): Promise<Response> {
     try {
       const userId = this.extractUserId(req);
       if (!userId) {
@@ -345,15 +384,20 @@ export class HttpServer {
 
       const subscriptions =
         await this.channelService.getUserSubscriptions(userId);
-      res.json(this.createResponse(true, subscriptions));
+      return res.json(this.createResponse(true, subscriptions));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json(this.createResponse(false, null, errorMessage));
+      return res
+        .status(500)
+        .json(this.createResponse(false, null, errorMessage));
     }
   }
 
-  private async handleGetPushUrl(req: Request, res: Response): Promise<void> {
+  private async handleGetPushUrl(
+    req: Request,
+    res: Response
+  ): Promise<Response> {
     try {
       const userId = this.extractUserId(req);
       if (!this.isAdmin(userId)) {
@@ -374,7 +418,7 @@ export class HttpServer {
       const pushUrl = `${config.app.baseUrl}/push/${channelId}`;
       const webhookUrl = `${config.app.baseUrl}/webhook/${channelId}`;
 
-      res.json(
+      return res.json(
         this.createResponse(true, {
           channelId,
           channelName: channel.name,
@@ -395,14 +439,16 @@ export class HttpServer {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json(this.createResponse(false, null, errorMessage));
+      return res
+        .status(500)
+        .json(this.createResponse(false, null, errorMessage));
     }
   }
 
   private async handleGetAdminStats(
     req: Request,
     res: Response
-  ): Promise<void> {
+  ): Promise<Response> {
     try {
       const userId = this.extractUserId(req);
       if (!this.isAdmin(userId)) {
@@ -412,11 +458,13 @@ export class HttpServer {
       }
 
       const stats = await this.messagePushService.getStats();
-      res.json(this.createResponse(true, stats));
+      return res.json(this.createResponse(true, stats));
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json(this.createResponse(false, null, errorMessage));
+      return res
+        .status(500)
+        .json(this.createResponse(false, null, errorMessage));
     }
   }
 
@@ -425,7 +473,7 @@ export class HttpServer {
     req: Request,
     res: Response,
     _next: any
-  ): void {
+  ): Response {
     logger.error('HTTP server error', {
       error: error.message,
       stack: error.stack,
@@ -433,7 +481,7 @@ export class HttpServer {
       method: req.method,
     });
 
-    res
+    return res
       .status(500)
       .json(this.createResponse(false, null, 'Internal server error'));
   }

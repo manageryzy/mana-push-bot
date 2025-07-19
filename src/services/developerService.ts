@@ -1,4 +1,4 @@
-import { BotContext, DeveloperCommand, BotStats } from '@/types';
+import { BotContext, DeveloperCommand } from '@/types';
 import { config } from '@/config';
 import { logger, logDeveloperCommand } from '@/utils/logger';
 import { escapeTelegramMarkdown, formatUptime } from '@/utils/helpers';
@@ -149,10 +149,9 @@ export class DeveloperService {
       const channels = await channelService.getAllChannels();
       const totalChannels = channels.length;
       const totalSubscribers = channels.reduce(
-        (sum, c) => sum + c.subscriberCount,
+        (sum: number, c: any) => sum + c.subscriberCount,
         0
       );
-
       const responseText = [
         '📊 *Bot Statistics*',
         '',
@@ -205,7 +204,7 @@ export class DeveloperService {
         '',
         ...logs
           .map(
-            log =>
+            (log: any) =>
               `\`${log.timestamp}\` ${log.messageType.toUpperCase()}: ${log.text ?? ''}`
           )
           .slice(-10), // Show last 10 logs to avoid message length limits
@@ -377,7 +376,7 @@ export class DeveloperService {
 
       const channelList = channels
         .map(
-          ch =>
+          (ch: any) =>
             `• ${ch.name} (${ch.id})\n` +
             `  ${ch.isPublic ? '🌐 Public' : '🔒 Private'} • ${ch.subscriberCount} subscribers`
         )
@@ -869,22 +868,6 @@ export class DeveloperService {
   public isAdmin(userId?: number): boolean {
     if (!userId) return false;
     return config.developer.adminUserIds.includes(userId);
-  }
-
-  private async getBotStats(): Promise<BotStats> {
-    // Deprecated: now handled in handleStatsCommand
-    return {
-      totalMessages: 0,
-      activeUsers: 0,
-      errorCount: 0,
-      uptime: (Date.now() - this.startTime) / 1000,
-      lastUpdate: new Date().toISOString(),
-    };
-  }
-
-  private async getRecentLogs(_level: string, _count: number): Promise<any[]> {
-    // Deprecated: now handled in handleLogsCommand
-    return [];
   }
 
   public getCommands(): DeveloperCommand[] {

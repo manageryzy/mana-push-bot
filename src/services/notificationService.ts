@@ -58,7 +58,7 @@ export class NotificationService {
 
       logNotification(payload.target, payload.content, success);
       return success;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Error processing notification', {
         id: payload.id,
         error: error.message,
@@ -176,7 +176,7 @@ export class NotificationService {
     payload: NotificationPayload
   ): Promise<boolean> {
     try {
-      const params = {
+      const params: AWS.SQS.SendMessageRequest = {
         QueueUrl: config.aws.notificationQueueUrl,
         MessageBody: JSON.stringify(payload),
         MessageAttributes: {
@@ -215,7 +215,7 @@ export class NotificationService {
       });
 
       return true;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to queue notification', {
         id: payload.id,
         error: error.message,
@@ -263,7 +263,7 @@ export class NotificationService {
 
       const result = await this.sqs.getQueueAttributes(params).promise();
       return result.Attributes;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Failed to get queue attributes', { error: error.message });
       return null;
     }

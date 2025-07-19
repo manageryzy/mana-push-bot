@@ -74,9 +74,12 @@ export const handler = async (
       body: JSON.stringify(result),
     };
   } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : undefined;
     logger.error('Webhook handler error', {
-      error: error.message,
-      stack: error.stack,
+      error: errorMessage,
+      stack: errorStack,
       event: {
         httpMethod: event.httpMethod,
         path: event.path,

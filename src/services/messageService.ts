@@ -20,17 +20,17 @@ export class MessageService {
       const messageLog: MessageLog = {
         id: generateId(),
         timestamp: formatTimestamp(),
-        userId: ctx.from.id,
-        chatId: ctx.chat.id,
-        messageId: message.message_id,
-        text: 'text' in message ? message.text : undefined,
-        messageType,
+        userId: ctx.from.id || 0,
+        chatId: ctx.chat.id || 0,
+        messageId: message.message_id || 0,
+        text: 'text' in message ? message.text : 'undefined',
+        messageType: messageType || 'unknown',
         metadata: {
-          username: ctx.from.username,
-          firstName: ctx.from.first_name,
-          lastName: ctx.from.last_name,
-          chatType: ctx.chat.type,
-          chatTitle: 'title' in ctx.chat ? ctx.chat.title : undefined,
+          username: ctx.from.username ? ctx.from.username : 'undefined',
+          firstName: ctx.from.first_name ? ctx.from.first_name : 'undefined',
+          lastName: ctx.from.last_name ? ctx.from.last_name : 'undefined',
+          chatType: ctx.chat.type ? ctx.chat.type : 'undefined',
+          chatTitle: 'title' in ctx.chat ? ctx.chat.title : 'undefined',
         },
       };
 
@@ -49,7 +49,7 @@ export class MessageService {
 
       // Store message if needed (you can implement database storage here)
       await this.storeMessage(messageLog);
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Error logging message', { error: error.message });
     }
   }
