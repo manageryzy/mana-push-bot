@@ -65,6 +65,12 @@ functions:
 
 resources:
   Resources:
+    NotificationDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-notifications-dlq
+        MessageRetentionPeriod: 1209600 # 14 days
+
     NotificationQueue:
       Type: AWS::SQS::Queue
       Properties:
@@ -72,12 +78,9 @@ resources:
         VisibilityTimeoutSeconds: 60
         MessageRetentionPeriod: 1209600 # 14 days
         ReceiveMessageWaitTimeSeconds: 20
-
-    NotificationDLQ:
-      Type: AWS::SQS::Queue
-      Properties:
-        QueueName: ${self:service}-${self:provider.stage}-notifications-dlq
-        MessageRetentionPeriod: 1209600 # 14 days
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt NotificationDLQ.Arn
+          maxReceiveCount: 3
 
   Outputs:
     WebhookUrl:

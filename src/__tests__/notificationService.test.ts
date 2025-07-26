@@ -2,21 +2,13 @@ import { NotificationService } from '@/services/notificationService';
 import { TelegramService } from '@/services/telegramService';
 import { NotificationPayload } from '@/types';
 
-// Mock AWS SDK
-jest.mock('aws-sdk', () => ({
-  SQS: jest.fn().mockImplementation(() => ({
-    sendMessage: jest.fn().mockReturnValue({
-      promise: jest.fn().mockResolvedValue({}),
-    }),
-    getQueueAttributes: jest.fn().mockReturnValue({
-      promise: jest.fn().mockResolvedValue({
-        Attributes: {
-          ApproximateNumberOfMessages: '0',
-          ApproximateNumberOfMessagesNotVisible: '0',
-        },
-      }),
-    }),
+// Mock AWS SDK v3
+jest.mock('@aws-sdk/client-sqs', () => ({
+  SQSClient: jest.fn().mockImplementation(() => ({
+    send: jest.fn().mockResolvedValue({}),
   })),
+  SendMessageCommand: jest.fn(),
+  GetQueueAttributesCommand: jest.fn(),
 }));
 
 describe('NotificationService', () => {

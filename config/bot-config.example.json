@@ -1,0 +1,24 @@
+{
+  "channels": [
+    {
+      "id": "example-channel",
+      "name": "Example Channel",
+      "description": "Example channel description",
+      "chatId": 0,
+      "isPublic": true,
+      "createdBy": 0,
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "subscriberCount": 0,
+      "messageCount": 0
+    }
+  ],
+  "stats": {
+    "totalMessages": 0,
+    "failedPushes": 0,
+    "averageResponseTime": 0,
+    "lastPushTime": null,
+    "successfulPushes": 0
+  },
+  "channelSubscriptions": []
+}

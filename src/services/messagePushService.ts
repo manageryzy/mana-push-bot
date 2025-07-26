@@ -330,6 +330,9 @@ export class MessagePushService {
     let formattedMessage = message;
 
     if (format === 'markdown') {
+      // Escape the main message for MarkdownV2
+      formattedMessage = escapeMarkdownV2(formattedMessage);
+
       // Add priority indicator for high priority messages
       if (priority === 'high') {
         formattedMessage = `🚨 ${bold('HIGH PRIORITY')} 🚨\n\n${formattedMessage}`;
@@ -347,8 +350,8 @@ export class MessagePushService {
         formattedMessage += `\n\n${metadataLines}`;
       }
 
-      // Add timestamp footer
-      formattedMessage += `\n\n${italic(`Sent: ${escapeMarkdownV2(timestamp)}`)}`;
+      // Add separator line and timestamp footer
+      formattedMessage += `\n\n${'━'.repeat(20)}\n${italic(`Sent: ${escapeMarkdownV2(timestamp)}`)}`;
     } else if (format === 'html') {
       if (priority === 'high') {
         formattedMessage = `🚨 <b>HIGH PRIORITY</b> 🚨\n\n${formattedMessage}`;

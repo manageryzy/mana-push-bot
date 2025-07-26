@@ -189,7 +189,7 @@ export class DeveloperService {
     const messageText = 'text' in ctx.message! ? ctx.message.text : '';
     const args = messageText.split(' ').slice(1) || [];
     const level = args[0] || 'info';
-    const count = parseInt(args[1]) || 10;
+    const count = parseInt(args[1], 10) || 10;
 
     let response = '📋 *Recent Logs*';
 

@@ -14,7 +14,7 @@ export function formatTimestamp(date: Date = new Date()): string {
 
 export function parseUserId(text: string): number | null {
   const match = text.match(/\d+/);
-  return match ? parseInt(match[0]) : null;
+  return match ? parseInt(match[0], 10) : null;
 }
 
 export function escapeTelegramMarkdown(text: string): string {
@@ -56,6 +56,10 @@ export function validateEnvironment(): { isValid: boolean; errors: string[] } {
 
   if (!process.env.TELEGRAM_BOT_TOKEN) {
     errors.push('TELEGRAM_BOT_TOKEN is required');
+  }
+
+  if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+    errors.push('JWT_SECRET is required in production');
   }
 
   return {

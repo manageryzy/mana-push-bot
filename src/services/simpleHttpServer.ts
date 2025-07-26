@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { config } from '@/config';
 import { logger } from '@/utils/logger';
+import { AuthService } from '@/utils/auth';
 import { ChannelService } from '@/services/channelService';
 import { ConfigService } from '@/services/configService';
 import { TelegramService } from '@/services/telegramService';
@@ -308,23 +309,15 @@ export class SimpleHttpServer {
   }
 
   private extractUserId(req: Request): number | null {
-    // Extract user ID from authorization header, query param, or body
     const authHeader = req.get('Authorization');
     const userIdParam = req.query.userId as string;
     const userIdBody = req.body?.userId;
 
-    if (authHeader) {
-      // Parse Bearer token or custom auth
-      const token = authHeader.replace('Bearer ', '');
-      return parseInt(token) || null;
-    }
-
-    return parseInt(userIdParam || userIdBody) || null;
+    return AuthService.extractUserId(authHeader, userIdParam, userIdBody);
   }
 
   private isAdmin(userId: number | null): boolean {
-    if (!userId) return false;
-    return config.developer.adminUserIds.includes(userId);
+    return AuthService.isAdmin(userId);
   }
 
   private createResponse<T>(

@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { config } from '@/config';
 import { logger } from '@/utils/logger';
+import { AuthService } from '@/utils/auth';
 import { ChannelService } from '@/services/channelService';
 import { MessagePushService } from '@/services/messagePushService';
 
@@ -38,6 +39,16 @@ export class HttpServer {
 
   private setupMiddleware(): void {
     this.app.use(express.json({ limit: '10mb' }));
+
+    // Handle JSON parsing errors
+    this.app.use((error: any, _req: Request, res: Response, next: any) => {
+      if (error instanceof SyntaxError && 'body' in error) {
+        return res
+          .status(400)
+          .json(this.createResponse(false, null, 'Invalid JSON format'));
+      }
+      return next(error);
+    });
     this.app.use(express.urlencoded({ extended: true }));
 
     // CORS middleware
@@ -165,6 +176,19 @@ export class HttpServer {
         timestamp: new Date().toISOString(),
       });
 
+      // Check if push failed
+      if (!result.success) {
+        return res
+          .status(500)
+          .json(
+            this.createResponse(
+              false,
+              null,
+              `Failed to push message: ${result.error}`
+            )
+          );
+      }
+
       return res.json(this.createResponse(true, result));
     } catch (error) {
       const errorMessage =
@@ -182,13 +206,12 @@ export class HttpServer {
   ): Promise<Response> {
     try {
       const userId = this.extractUserId(req);
-      if (!this.isAdmin(userId)) {
-        return res
-          .status(403)
-          .json(this.createResponse(false, null, 'Admin access required'));
-      }
 
-      const channels = await this.channelService.getAllChannels();
+      // Admin users get all channels, regular/unauthenticated users get public channels only
+      const channels = this.isAdmin(userId)
+        ? await this.channelService.getAllChannels()
+        : await this.channelService.getPublicChannels();
+
       return res.json(this.createResponse(true, channels));
     } catch (error) {
       const errorMessage =
@@ -424,6 +447,7 @@ export class HttpServer {
           channelName: channel.name,
           pushUrl,
           webhookUrl,
+          example: `curl -X POST "${pushUrl}" -H "Content-Type: application/json" -d '{"message": "Hello from API!"}'`,
           documentation: {
             method: 'POST',
             contentType: 'application/json',
@@ -487,24 +511,16 @@ export class HttpServer {
   }
 
   private extractUserId(req: Request): number | null {
-    // Extract user ID from authorization header, query param, or body
     const authHeader = req.get('Authorization');
     const userIdParam = req.query.userId as string;
     const userIdBody = req.body.userId;
 
-    if (authHeader) {
-      // Parse Bearer token or custom auth
-      const token = authHeader.replace('Bearer ', '');
-      // TODO: Implement proper token validation
-      return parseInt(token) || null;
-    }
-
-    return parseInt(userIdParam || userIdBody) || null;
+    return AuthService.extractUserId(authHeader, userIdParam, userIdBody);
   }
 
   private isAdmin(userId: number | null): boolean {
     if (!userId) return false;
-    return config.developer.adminUserIds.includes(userId);
+    return AuthService.isAdmin(userId);
   }
 
   private createResponse<T>(
@@ -529,10 +545,27 @@ export class HttpServer {
   }
 
   public start(port: number = 3000): Promise<void> {
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
+      // Check if server is already running
+      if (this.server && this.server.listening) {
+        logger.info(`HTTP server already running on port ${port}`);
+        resolve();
+        return;
+      }
+
       this.server = this.app.listen(port, () => {
         logger.info(`HTTP server started on port ${port}`);
         resolve();
+      });
+
+      // Handle server errors
+      this.server.on('error', (error: any) => {
+        if (error.code === 'EADDRINUSE') {
+          logger.warn(`Port ${port} is already in use`);
+          resolve(); // Don't reject, just resolve as if already running
+        } else {
+          reject(error);
+        }
       });
     });
   }

@@ -1,15 +1,21 @@
-import AWS from 'aws-sdk';
+import {
+  SQSClient,
+  SendMessageCommand,
+  SendMessageCommandInput,
+  GetQueueAttributesCommand,
+  GetQueueAttributesCommandInput,
+} from '@aws-sdk/client-sqs';
 import { NotificationPayload } from '@/types';
 import { config } from '@/config';
 import { logger, logNotification } from '@/utils/logger';
 import { TelegramService } from './telegramService';
 
 export class NotificationService {
-  private sqs: AWS.SQS;
+  private sqs: SQSClient;
   private telegramService: TelegramService;
 
   constructor(telegramService: TelegramService) {
-    this.sqs = new AWS.SQS({ region: config.aws.region });
+    this.sqs = new SQSClient({ region: config.aws.region });
     this.telegramService = telegramService;
   }
 
@@ -138,7 +144,9 @@ export class NotificationService {
     content: any
   ): Promise<boolean> {
     // Channel ID should start with @ or be a numeric ID
-    const chatId = channelId.startsWith('@') ? channelId : parseInt(channelId);
+    const chatId = channelId.startsWith('@')
+      ? channelId
+      : parseInt(channelId, 10);
     return await this.sendToChat(chatId as number, content);
   }
 
@@ -176,7 +184,7 @@ export class NotificationService {
     payload: NotificationPayload
   ): Promise<boolean> {
     try {
-      const params: AWS.SQS.SendMessageRequest = {
+      const params: SendMessageCommandInput = {
         QueueUrl: config.aws.notificationQueueUrl,
         MessageBody: JSON.stringify(payload),
         MessageAttributes: {
@@ -206,7 +214,7 @@ export class NotificationService {
         }
       }
 
-      await this.sqs.sendMessage(params).promise();
+      await this.sqs.send(new SendMessageCommand(params));
 
       logger.info('Notification queued', {
         id: payload.id,
@@ -253,7 +261,7 @@ export class NotificationService {
 
   public async getQueueAttributes(): Promise<any> {
     try {
-      const params = {
+      const params: GetQueueAttributesCommandInput = {
         QueueUrl: config.aws.notificationQueueUrl,
         AttributeNames: [
           'ApproximateNumberOfMessages',
@@ -261,7 +269,7 @@ export class NotificationService {
         ],
       };
 
-      const result = await this.sqs.getQueueAttributes(params).promise();
+      const result = await this.sqs.send(new GetQueueAttributesCommand(params));
       return result.Attributes;
     } catch (error: any) {
       logger.error('Failed to get queue attributes', { error: error.message });

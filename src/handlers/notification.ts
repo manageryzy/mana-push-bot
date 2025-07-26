@@ -8,6 +8,12 @@ import { validateConfig } from '@/config';
 let telegramService: TelegramService;
 let notificationService: NotificationService;
 
+// Export for testing purposes
+export const resetServices = (): void => {
+  telegramService = undefined as any;
+  notificationService = undefined as any;
+};
+
 export const handler = async (
   event: SQSEvent,
   context: Context

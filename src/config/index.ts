@@ -15,15 +15,18 @@ export const config = {
   app: {
     stage: process.env.STAGE || 'dev',
     logLevel: process.env.LOG_LEVEL || 'info',
-    port: parseInt(process.env.PORT || '3001'),
+    port: parseInt(process.env.PORT || '3001', 10),
     baseUrl: process.env.BASE_URL || 'http://localhost:3001',
   },
   developer: {
     adminUserIds:
-      process.env.ADMIN_USER_IDS?.split(',').map(id => parseInt(id)) || [],
+      process.env.ADMIN_USER_IDS?.split(',').map(id => parseInt(id, 10)) || [],
     devChatId: process.env.DEV_CHAT_ID
-      ? parseInt(process.env.DEV_CHAT_ID)
+      ? parseInt(process.env.DEV_CHAT_ID, 10)
       : undefined,
+  },
+  auth: {
+    jwtSecret: process.env.JWT_SECRET || 'your-secret-key-change-in-production',
   },
 } as const;
 
