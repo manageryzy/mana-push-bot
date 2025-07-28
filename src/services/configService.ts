@@ -44,7 +44,11 @@ export class ConfigService {
   }
 
   async getConfig(): Promise<BotConfig> {
-    return { ...this.config };
+    return this.config;
+  }
+
+  public async reloadConfig(): Promise<void> {
+    await this.loadConfig();
   }
 
   async updateConfig(updates: Partial<BotConfig>): Promise<void> {

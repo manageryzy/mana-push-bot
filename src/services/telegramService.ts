@@ -81,6 +81,22 @@ export class TelegramService {
         ctx.messageId = ctx.message.message_id;
       }
 
+      // Debug logging for incoming updates
+      logger.debug('Incoming Telegram update', {
+        updateType: ctx.updateType,
+        userId: ctx.userId,
+        chatId: ctx.chatId,
+        messageText:
+          ctx.message && 'text' in ctx.message ? ctx.message.text : 'N/A',
+        callbackData:
+          ctx.callbackQuery && 'data' in ctx.callbackQuery
+            ? ctx.callbackQuery.data
+            : 'N/A',
+        hasMessage: !!ctx.message,
+        hasCallbackQuery: !!ctx.callbackQuery,
+        fromUsername: ctx.from?.username || 'N/A',
+      });
+
       await next();
 
       const responseTime = Date.now() - start;
@@ -95,6 +111,41 @@ export class TelegramService {
     this.bot.catch((err, ctx) => {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       const errorStack = err instanceof Error ? err.stack : undefined;
+
+      // Enhanced error logging for MarkdownV2 issues
+      if (
+        errorMessage.includes("can't parse entities") ||
+        errorMessage.includes('Bad Request')
+      ) {
+        logger.error(
+          'Telegram parsing error - likely MarkdownV2 escaping issue',
+          {
+            error: errorMessage,
+            stack: errorStack,
+            userId: ctx.userId,
+            chatId: ctx.chatId,
+            updateType: ctx.updateType,
+            messageText:
+              ctx.message && 'text' in ctx.message ? ctx.message.text : 'N/A',
+            callbackData:
+              ctx.callbackQuery && 'data' in ctx.callbackQuery
+                ? ctx.callbackQuery.data
+                : 'N/A',
+            fromUsername: ctx.from?.username || 'N/A',
+            chatType: ctx.chat?.type || 'N/A',
+          }
+        );
+
+        // Log the current context state
+        logger.error('Context state when error occurred', {
+          contextKeys: Object.keys(ctx),
+          hasMessage: !!ctx.message,
+          hasCallbackQuery: !!ctx.callbackQuery,
+          hasInlineQuery: !!ctx.inlineQuery,
+          hasChosenInlineResult: !!ctx.chosenInlineResult,
+        });
+      }
+
       logger.error('Bot error occurred', {
         error: errorMessage,
         stack: errorStack,
@@ -148,7 +199,30 @@ export class TelegramService {
         'This bot receives notifications via webhook and SQS',
       ].join('\n');
 
-      await ctx.replyWithMarkdownV2(helpText.replace(/[-.()]/g, '\\$&'));
+      // Debug logging for help command
+      logger.debug('Processing help command', {
+        userId: ctx.userId,
+        chatId: ctx.chatId,
+        messageText:
+          ctx.message && 'text' in ctx.message ? ctx.message.text : 'N/A',
+        helpTextLength: helpText.length,
+        helpTextPreview: helpText.substring(0, 200),
+        fullHelpText: helpText,
+      });
+
+      // Properly escape the help text using escapeMarkdownV2
+      const escapedHelpText = escapeMarkdownV2(helpText);
+
+      // Log the escaped version for debugging
+      logger.debug('Help text after escaping', {
+        userId: ctx.userId,
+        chatId: ctx.chatId,
+        escapedTextLength: escapedHelpText.length,
+        escapedTextPreview: escapedHelpText.substring(0, 200),
+        fullEscapedText: escapedHelpText,
+      });
+
+      await ctx.replyWithMarkdownV2(escapedHelpText);
     });
 
     // Interactive menu command
@@ -217,8 +291,26 @@ export class TelegramService {
               ),
               escapeMarkdownV2(`🌍 Environment: ${config.app.stage}`),
               '',
-              'All systems operational' + escapeMarkdownV2('!'),
+              escapeMarkdownV2('All systems operational!'),
             ].join('\n');
+
+            // Debug logging for the status message
+            logger.debug('Editing status message', {
+              messageLength: statusMessage.length,
+              messageContent: statusMessage,
+              chatId: ctx.chatId,
+              userId: ctx.userId,
+            });
+
+            // Log before attempting to edit message
+            logger.debug('About to edit status message via callback', {
+              userId: ctx.userId,
+              chatId: ctx.chatId,
+              messageLength: statusMessage.length,
+              messageContent: statusMessage,
+              callbackData: 'status',
+            });
+
             await ctx.editMessageText(statusMessage, {
               parse_mode: 'MarkdownV2',
             });
@@ -230,19 +322,29 @@ export class TelegramService {
             const helpMessage = [
               bold('Quick Help'),
               '',
-              '/start ' + escapeMarkdownV2('- Start the bot'),
-              '/help ' + escapeMarkdownV2('- Full help message'),
-              '/status ' + escapeMarkdownV2('- Check bot status'),
-              '/menu ' + escapeMarkdownV2('- Show this menu'),
+              escapeMarkdownV2('/start - Start the bot'),
+              escapeMarkdownV2('/help - Full help message'),
+              escapeMarkdownV2('/status - Check bot status'),
+              escapeMarkdownV2('/menu - Show this menu'),
               '',
               bold('Features:'),
               escapeMarkdownV2('• Message logging and analysis'),
               escapeMarkdownV2('• Developer notifications'),
               escapeMarkdownV2('• AWS Lambda integration'),
               '',
-              'Need more help' +
-                escapeMarkdownV2('? Use /help for detailed commands.'),
+              escapeMarkdownV2(
+                'Need more help? Use /help for detailed commands.'
+              ),
             ].join('\n');
+            // Log before attempting to edit help message via callback
+            logger.debug('About to edit help message via callback', {
+              userId: ctx.userId,
+              chatId: ctx.chatId,
+              messageLength: helpMessage.length,
+              messageContent: helpMessage,
+              callbackData: 'help',
+            });
+
             await ctx.editMessageText(helpMessage, {
               parse_mode: 'MarkdownV2',
             });
@@ -278,8 +380,9 @@ export class TelegramService {
             const aboutMessage = [
               bold('Mana Push Bot v1.0.0') + ' 🤖',
               '',
-              'A modern TypeScript Telegram bot running on AWS Lambda' +
-                escapeMarkdownV2('.'),
+              escapeMarkdownV2(
+                'A modern TypeScript Telegram bot running on AWS Lambda.'
+              ),
               '',
               bold('Built with:'),
               escapeMarkdownV2('• Telegraf.js'),
@@ -287,9 +390,19 @@ export class TelegramService {
               escapeMarkdownV2('• AWS Lambda'),
               escapeMarkdownV2('• Serverless Framework'),
               '',
-              'Created for efficient notification management and real' +
-                escapeMarkdownV2('-time messaging.'),
+              escapeMarkdownV2(
+                'Created for efficient notification management and real-time messaging.'
+              ),
             ].join('\n');
+            // Log before attempting to edit about message via callback
+            logger.debug('About to edit about message via callback', {
+              userId: ctx.userId,
+              chatId: ctx.chatId,
+              messageLength: aboutMessage.length,
+              messageContent: aboutMessage,
+              callbackData: 'about',
+            });
+
             await ctx.editMessageText(aboutMessage, {
               parse_mode: 'MarkdownV2',
             });
@@ -371,11 +484,9 @@ export class TelegramService {
             };
             await ctx.editMessageText(
               '🔗 *Push URL Management*\n\n' +
-                'To get a push URL, use:\n' +
-                escapeMarkdownV2('/push_url <channelId>') +
-                '\n\n' +
-                'Example: ' +
-                escapeMarkdownV2('/push_url alerts'),
+                escapeMarkdownV2(
+                  'To get a push URL, use:\n/push_url <channelId>\n\nExample: /push_url alerts'
+                ),
               {
                 parse_mode: 'MarkdownV2',
                 reply_markup: pushUrlsKeyboard,
@@ -484,7 +595,25 @@ export class TelegramService {
         `📊 Node.js: ${process.version}`,
       ].join('\n');
 
-      await ctx.replyWithMarkdownV2(statusText.replace(/[-.()]/g, '\\$&'));
+      // Debug logging for status command
+      logger.debug('Processing status command', {
+        userId: ctx.userId,
+        chatId: ctx.chatId,
+        statusTextLength: statusText.length,
+        statusTextContent: statusText,
+      });
+
+      const escapedStatusText = statusText.replace(/[-.()]/g, '\\$&');
+
+      // Log escaped version
+      logger.debug('Status text after escaping', {
+        userId: ctx.userId,
+        chatId: ctx.chatId,
+        escapedLength: escapedStatusText.length,
+        escapedContent: escapedStatusText,
+      });
+
+      await ctx.replyWithMarkdownV2(escapedStatusText);
     });
 
     // Developer commands
@@ -558,6 +687,15 @@ export class TelegramService {
     options: any = {}
   ): Promise<boolean> {
     try {
+      // Add debug logging for the message content
+      logger.debug('Sending notification', {
+        chatId,
+        textLength: text.length,
+        textPreview: text.substring(0, 100),
+        parseMode: options.parse_mode,
+        hasMarkdownV2: options.parse_mode === 'MarkdownV2',
+      });
+
       await this.bot.telegram.sendMessage(chatId, text, options);
       logger.info('Notification sent successfully', {
         chatId,
@@ -571,6 +709,8 @@ export class TelegramService {
         chatId,
         text: text.substring(0, 50),
         error: errorMessage,
+        parseMode: options.parse_mode,
+        fullText: text, // Log full text to see what caused the error
       });
       return false;
     }

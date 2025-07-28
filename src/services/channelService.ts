@@ -360,6 +360,9 @@ export class ChannelService {
     channelId: string
   ): Promise<ChannelSubscription[]> {
     try {
+      // Always reload config from disk to ensure we have the latest subscription status
+      await this.configService.reloadConfig();
+
       const config = await this.configService.getConfig();
       const subscriptions = config.channelSubscriptions || [];
 

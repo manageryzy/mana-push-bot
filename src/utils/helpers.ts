@@ -19,12 +19,14 @@ export function parseUserId(text: string): number | null {
 
 export function escapeTelegramMarkdown(text: string): string {
   // Escape special characters for MarkdownV2
-  return text.replace(/[_*[\]()~`>#+=|{}.!-\\]/g, '\\$&');
+  // Using the same implementation as telegramFormatting.ts for consistency
+  return text.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
 }
 
 export function escapeMarkdownV2(text: string): string {
   // More comprehensive escaping for MarkdownV2
-  return text.replace(/([_*[\]()~`>#+=|{}.!-\\])/g, '\\$1');
+  // Using the same implementation as telegramFormatting.ts for consistency
+  return text.replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
 }
 
 export function truncateText(text: string, maxLength: number = 100): string {

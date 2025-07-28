@@ -102,15 +102,25 @@ export class MessagePushService {
       const bot = this.telegramService.getBot();
       let messageId: number | undefined;
 
-      try {
-        const sendOptions: any = {
-          link_preview_options: { is_disabled: true },
-        };
+      const sendOptions: any = {
+        link_preview_options: { is_disabled: true },
+      };
 
-        const parseMode = this.getParseMode(data.format || 'markdown');
-        if (parseMode) {
-          sendOptions.parse_mode = parseMode;
-        }
+      const parseMode = this.getParseMode(data.format || 'markdown');
+      if (parseMode) {
+        sendOptions.parse_mode = parseMode;
+      }
+
+      try {
+        // Debug logging before sending message
+        logger.debug('About to send Telegram message', {
+          channelId: data.channelId,
+          chatId: channel.chatId,
+          messageLength: formattedMessage.length,
+          messagePreview: formattedMessage.substring(0, 200),
+          parseMode: sendOptions.parse_mode,
+          fullMessage: formattedMessage, // Include full message for debugging MarkdownV2 issues
+        });
 
         const sentMessage = await bot.telegram.sendMessage(
           channel.chatId,
@@ -119,6 +129,25 @@ export class MessagePushService {
         );
         messageId = sentMessage.message_id;
       } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
+
+        // Enhanced error logging for MarkdownV2 issues
+        if (
+          errorMessage.includes("can't parse entities") ||
+          errorMessage.includes('Bad Request')
+        ) {
+          logger.error('MarkdownV2 parsing error in channel message', {
+            channelId: data.channelId,
+            chatId: channel.chatId,
+            error: errorMessage,
+            parseMode: sendOptions.parse_mode,
+            messageLength: formattedMessage.length,
+            formattedMessage: formattedMessage,
+            originalMessage: data.message,
+          });
+        }
+
         logger.error('Failed to send message to channel chat', {
           channelId: data.channelId,
           chatId: channel.chatId,
@@ -134,21 +163,21 @@ export class MessagePushService {
       if (subscribers.length > 0) {
         const subscriberResults = await Promise.allSettled(
           subscribers.map(async subscription => {
+            const subscriberOptions: any = {
+              link_preview_options: { is_disabled: true },
+            };
+
+            const parseMode = this.getParseMode(data.format || 'markdown');
+            if (parseMode) {
+              subscriberOptions.parse_mode = parseMode;
+            }
+
             try {
               logger.info('Attempting to send message to subscriber', {
                 userId: subscription.userId,
                 chatId: subscription.chatId,
                 channelId: data.channelId,
               });
-
-              const subscriberOptions: any = {
-                link_preview_options: { is_disabled: true },
-              };
-
-              const parseMode = this.getParseMode(data.format || 'markdown');
-              if (parseMode) {
-                subscriberOptions.parse_mode = parseMode;
-              }
 
               await bot.telegram.sendMessage(
                 subscription.chatId,
@@ -168,6 +197,26 @@ export class MessagePushService {
                 chatId: subscription.chatId,
               };
             } catch (error) {
+              const errorMessage =
+                error instanceof Error ? error.message : 'Unknown error';
+
+              // Enhanced error logging for MarkdownV2 issues
+              if (
+                errorMessage.includes("can't parse entities") ||
+                errorMessage.includes('Bad Request')
+              ) {
+                logger.error('MarkdownV2 parsing error in subscriber message', {
+                  channelId: data.channelId,
+                  userId: subscription.userId,
+                  chatId: subscription.chatId,
+                  error: errorMessage,
+                  parseMode: subscriberOptions.parse_mode,
+                  messageLength: formattedMessage.length,
+                  formattedMessage: formattedMessage,
+                  originalMessage: data.message,
+                });
+              }
+
               logger.error('Failed to send message to subscriber', {
                 channelId: data.channelId,
                 userId: subscription.userId,
@@ -339,6 +388,14 @@ export class MessagePushService {
       } else if (priority === 'low') {
         formattedMessage = `📋 ${italic('Info')}: ${formattedMessage}`;
       }
+
+      // Debug logging for message formatting
+      logger.debug('Formatting message with MarkdownV2', {
+        originalLength: message.length,
+        formattedLength: formattedMessage.length,
+        priority,
+        hasMetadata: data.metadata && Object.keys(data.metadata).length > 0,
+      });
 
       // Add metadata if present
       if (data.metadata && Object.keys(data.metadata).length > 0) {
