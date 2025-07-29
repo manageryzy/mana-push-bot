@@ -317,6 +317,9 @@ export class SimpleHttpServer {
   }
 
   private isAdmin(userId: number | null): boolean {
+    if (!userId) {
+      return false;
+    }
     return AuthService.isAdmin(userId);
   }
 
