@@ -147,7 +147,7 @@ describe('DeveloperService', () => {
       await developerService.handleDevCommand(mockCtx);
 
       expect(mockCtx.replyWithMarkdownV2).toHaveBeenCalledWith(
-        expect.stringContaining('\\Developer \\Menu')
+        expect.stringContaining('Developer')
       );
       expect(mockCtx.reply).not.toHaveBeenCalledWith(
         expect.stringContaining('Access denied')
@@ -173,15 +173,15 @@ describe('DeveloperService', () => {
       const call = mockCtx.replyWithMarkdownV2 as jest.Mock;
       const message = call.mock.calls[0][0];
 
-      expect(message).toContain('\\Developer \\Menu');
-      expect(message).toContain('\\Statistics \\& \\Monitoring');
-      expect(message).toContain('\\Channel \\Management');
-      expect(message).toContain('\\Server \\Control');
-      expect(message).toContain('\\/stats');
-      expect(message).toContain('\\/channels');
-      expect(message).toContain('\\/broadcast');
-      expect(message).toContain('\\Version\\: \\1\\.\\0\\.\\0');
-      expect(message).toContain('\\Stage\\: test');
+      expect(message).toContain('Developer ');
+      expect(message).toContain('Statistics & Monitoring');
+      expect(message).toContain('Channel Management');
+      expect(message).toContain('Server Control');
+      expect(message).toContain('/stats');
+      expect(message).toContain('/channels');
+      expect(message).toContain('/broadcast');
+      expect(message).toContain('Version: 1\\.0\\.0');
+      expect(message).toContain('Stage: test');
     });
   });
 
@@ -192,16 +192,16 @@ describe('DeveloperService', () => {
       const call = mockCtx.replyWithMarkdownV2 as jest.Mock;
       const message = call.mock.calls[0][0];
 
-      expect(message).toContain('\\Bot \\Statistics');
-      expect(message).toContain('\\Total \\Messages');
-      expect(message).toContain('\\Total \\Messages\\: \\1\\0\\0');
+      expect(message).toContain('Bot Statistics');
+      expect(message).toContain('Total Messages');
+      expect(message).toContain('Total Messages: 100');
       // Message breakdown is not included in the actual output
       // expect(message).toContain('\\Text\\: \\5\\0');
       // expect(message).toContain('\\Photo\\: \\2\\0');
       // expect(message).toContain('\\Video\\: \\3\\0');
-      expect(message).toContain('\\Active \\Users');
-      expect(message).toContain('\\Channels\\: \\2');
-      expect(message).toContain('\\Subscribers\\: \\7');
+      expect(message).toContain('Active Users');
+      expect(message).toContain('Channels: 2');
+      expect(message).toContain('Subscribers: 7');
     });
 
     it('should handle errors when fetching statistics', async () => {
@@ -227,9 +227,9 @@ describe('DeveloperService', () => {
       const call = mockCtx.replyWithMarkdownV2 as jest.Mock;
       const message = call.mock.calls[0][0];
 
-      expect(message).toContain('\\Recent \\Logs \\(\\I\\N\\F\\O\\)');
-      expect(message).toContain('\\T\\E\\X\\T\\: \\Test message \\1');
-      expect(message).toContain('\\P\\H\\O\\T\\O\\: \\Photo caption');
+      expect(message).toContain('Recent Logs \\(INFO\\)');
+      expect(message).toContain('TEXT: Test message 1');
+      expect(message).toContain('PHOTO: Photo caption');
     });
 
     it('should accept custom level and count parameters', async () => {
@@ -241,7 +241,7 @@ describe('DeveloperService', () => {
       const call = mockCtx.replyWithMarkdownV2 as jest.Mock;
       const message = call.mock.calls[0][0];
 
-      expect(message).toContain('\\Recent \\Logs \\(\\E\\R\\R\\O\\R\\)');
+      expect(message).toContain('Recent Logs \\(ERROR\\)');
     });
   });
 
@@ -258,9 +258,9 @@ describe('DeveloperService', () => {
 
       expect(replyCall).toBeDefined();
       expect(replyCall[0]).toContain(
-        '\\Broadcast sent successfully to \\2 targets'
+        'Broadcast sent successfully to 2 targets'
       );
-      expect(replyCall[0]).toContain('\\Important announcement\\!');
+      expect(replyCall[0]).toContain('Important announcement\\!');
     });
 
     it('should reject broadcast without message', async () => {
@@ -282,10 +282,10 @@ describe('DeveloperService', () => {
       const call = mockCtx.reply as jest.Mock;
       const message = call.mock.calls[0][0];
 
-      expect(message).toContain('\\Configuration \\Reloaded');
-      expect(message).toContain('\\*\\Environment\\:\\* test');
-      expect(message).toContain('\\*\\Port\\:\\* \\3\\0\\0\\0');
-      expect(message).toContain('\\Configuration refreshed successfully');
+      expect(message).toContain('Configuration Reloaded');
+      expect(message).toContain('\\*Environment:\\* test');
+      expect(message).toContain('\\*Port:\\* 3000');
+      expect(message).toContain('Configuration refreshed successfully');
     });
   });
 
@@ -297,11 +297,11 @@ describe('DeveloperService', () => {
         const call = mockCtx.reply as jest.Mock;
         const message = call.mock.calls[0][0];
 
-        expect(message).toContain('\\Message \\Channels');
-        expect(message).toContain('\\System \\Alerts \\(alerts\\)');
-        expect(message).toContain('🌐 \\Public • \\5 subscribers');
-        expect(message).toContain('\\Updates \\(updates\\)');
-        expect(message).toContain('🔒 \\Private • \\2 subscribers');
+        expect(message).toContain('Message Channels');
+        expect(message).toContain('System Alerts \\(alerts\\)');
+        expect(message).toContain('🌐 Public • 5 subscribers');
+        expect(message).toContain('Updates \\(updates\\)');
+        expect(message).toContain('🔒 Private • 2 subscribers');
       });
 
       it('should show empty state when no channels exist', async () => {
@@ -333,8 +333,8 @@ describe('DeveloperService', () => {
         const call = mockCtx.reply as jest.Mock;
         const message = call.mock.calls[0][0];
 
-        expect(message).toContain('\\Channel \\Created');
-        expect(message).toContain('\\*\\Name\\:\\* undefined');
+        expect(message).toContain('Channel Created Successfully');
+        expect(message).toContain('\\*Name:\\* undefined');
       });
 
       it('should reject channel creation without name', async () => {
@@ -359,8 +359,8 @@ describe('DeveloperService', () => {
         const call = mockCtx.reply as jest.Mock;
         const message = call.mock.calls[0][0];
 
-        expect(message).toContain('\\Channel \\Deleted');
-        expect(message).toContain('\\*\\Channel \\I\\D\\:\\* alerts');
+        expect(message).toContain('Channel Deleted');
+        expect(message).toContain('\\*Channel ID:\\* alerts');
       });
 
       it('should reject deletion without channel ID', async () => {
@@ -383,13 +383,11 @@ describe('DeveloperService', () => {
         const call = mockCtx.reply as jest.Mock;
         const message = call.mock.calls[0][0];
 
-        expect(message).toContain('\\Push \\U\\R\\L \\Information');
-        expect(message).toContain('\\*\\Channel\\:\\* alerts');
-        expect(message).toContain(
-          'http\\:\\/\\/localhost\\:\\3\\0\\0\\0\\/push\\/alerts'
-        );
-        expect(message).toContain('curl \\-\\X \\P\\O\\S\\T');
-        expect(message).toContain('\\Supported \\Parameters');
+        expect(message).toContain('Push URL Information');
+        expect(message).toContain('\\*Channel:\\* alerts');
+        expect(message).toContain('http://localhost:3000/push/alerts');
+        expect(message).toContain('curl \\-X POST');
+        expect(message).toContain('Supported Parameters');
       });
 
       it('should reject request without channel ID', async () => {
@@ -421,8 +419,8 @@ describe('DeveloperService', () => {
         const call = mockCtx.reply as jest.Mock;
         const message = call.mock.calls[0][0];
 
-        expect(message).toContain('\\Subscription \\Successful');
-        expect(message).toContain('\\*\\Channel\\:\\* \\System \\Alerts');
+        expect(message).toContain('Subscription Successful');
+        expect(message).toContain('\\*Channel:\\* System Alerts');
       });
 
       it('should handle non-existent channel', async () => {
@@ -459,7 +457,7 @@ describe('DeveloperService', () => {
         );
 
         expect(mockCtx.reply).toHaveBeenCalledWith(
-          expect.stringContaining('\\*\\Unsubscription \\Successful\\*'),
+          expect.stringContaining('Unsubscription Successful'),
           expect.objectContaining({ parse_mode: 'MarkdownV2' })
         );
       });
@@ -488,13 +486,11 @@ describe('DeveloperService', () => {
         const call = mockCtx.reply as jest.Mock;
         const message = call.mock.calls[0][0];
 
-        expect(message).toContain('\\H\\T\\T\\P \\Server \\Status');
-        expect(message).toContain('\\*\\Status\\:\\* \\Running');
-        expect(message).toContain('\\*\\Port\\:\\* \\3\\0\\0\\0');
-        expect(message).toContain(
-          '\\*\\Base \\U\\R\\L\\:\\* http\\:\\/\\/localhost\\:\\3\\0\\0\\0'
-        );
-        expect(message).toContain('\\Available \\Endpoints');
+        expect(message).toContain('HTTP Server Status');
+        expect(message).toContain('\\*Status:\\* Running');
+        expect(message).toContain('\\*Port:\\* 3000');
+        expect(message).toContain('\\*Base URL:\\* http://localhost:3000');
+        expect(message).toContain('Available Endpoints');
       });
     });
 

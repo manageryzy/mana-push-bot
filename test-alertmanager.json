@@ -1,0 +1,36 @@
+{
+  "receiver": "telegram-bot",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "HighMemoryUsage",
+        "instance": "server-01",
+        "severity": "critical",
+        "team": "backend"
+      },
+      "annotations": {
+        "summary": "High memory usage detected",
+        "description": "Memory usage is above 80% for more than 5 minutes",
+        "runbook_url": "https://runbooks.example.com/memory"
+      },
+      "startsAt": "2025-01-29T16:53:00.000Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://localhost:9090/graph?g0.expr=memory_usage",
+      "fingerprint": "abc123"
+    }
+  ],
+  "groupLabels": {
+    "alertname": "HighMemoryUsage"
+  },
+  "commonLabels": {
+    "team": "backend",
+    "environment": "production"
+  },
+  "commonAnnotations": {},
+  "externalURL": "http://localhost:9093",
+  "version": "4",
+  "groupKey": "{}:{alertname=\"HighMemoryUsage\"}",
+  "truncatedAlerts": 0
+}

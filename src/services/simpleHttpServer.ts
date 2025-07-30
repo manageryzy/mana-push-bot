@@ -15,6 +15,30 @@ export interface PushMessageRequest {
   metadata?: Record<string, any>;
 }
 
+// AlertManager webhook interfaces
+export interface AlertManagerAlert {
+  status: 'firing' | 'resolved';
+  labels: Record<string, string>;
+  annotations: Record<string, string>;
+  startsAt: string;
+  endsAt: string;
+  generatorURL?: string;
+  fingerprint?: string;
+}
+
+export interface AlertManagerWebhook {
+  receiver: string;
+  status: 'firing' | 'resolved';
+  alerts: AlertManagerAlert[];
+  groupLabels: Record<string, string>;
+  commonLabels: Record<string, string>;
+  commonAnnotations: Record<string, string>;
+  externalURL: string;
+  version: string;
+  groupKey: string;
+  truncatedAlerts?: number;
+}
+
 export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;
@@ -119,6 +143,19 @@ export class SimpleHttpServer {
       res.json(this.createResponse(true, health));
     });
 
+    // AlertManager webhook endpoint
+    this.app.post(
+      '/webhook/alertmanager/:channel?',
+      async (req: Request, res: Response) => {
+        await this.handleAlertManagerWebhook(req, res);
+      }
+    );
+
+    // Generic webhook endpoint (alias for AlertManager)
+    this.app.post('/webhook/:channel?', async (req: Request, res: Response) => {
+      await this.handleAlertManagerWebhook(req, res);
+    });
+
     // Message push endpoints
     this.app.post('/push/:channel', async (req: Request, res: Response) => {
       await this.handlePushMessage(req, res);
@@ -171,19 +208,31 @@ export class SimpleHttpServer {
 
         const { channelId } = req.params;
         const pushUrl = `${config.app.baseUrl}/push/${channelId}`;
+        const alertManagerUrl = `${config.app.baseUrl}/webhook/alertmanager/${channelId}`;
 
         res.json(
           this.createResponse(true, {
             channelId,
             pushUrl,
+            alertManagerUrl,
             documentation: {
-              method: 'POST',
-              contentType: 'application/json',
-              body: {
-                message: 'Your message here',
-                format: 'markdown | text | html (optional, default: markdown)',
-                priority: 'low | normal | high (optional, default: normal)',
-                metadata: 'Additional data (optional)',
+              standard: {
+                method: 'POST',
+                url: pushUrl,
+                contentType: 'application/json',
+                body: {
+                  message: 'Your message here',
+                  format:
+                    'markdown | text | html (optional, default: markdown)',
+                  priority: 'low | normal | high (optional, default: normal)',
+                  metadata: 'Additional data (optional)',
+                },
+              },
+              alertmanager: {
+                method: 'POST',
+                url: alertManagerUrl,
+                contentType: 'application/json',
+                description: 'Accepts AlertManager webhook format directly',
               },
             },
           })
@@ -204,6 +253,240 @@ export class SimpleHttpServer {
         .status(500)
         .json(this.createResponse(false, null, 'Internal server error'));
     });
+  }
+
+  private async handleAlertManagerWebhook(
+    req: Request,
+    res: Response
+  ): Promise<void> {
+    try {
+      // Check if services are initialized
+      if (!this.messagePushService || !this.channelService) {
+        res
+          .status(503)
+          .json(
+            this.createResponse(
+              false,
+              null,
+              'Services not initialized. Server may still be starting up.'
+            )
+          );
+        return;
+      }
+
+      const channel = req.params.channel;
+      if (!channel) {
+        res
+          .status(400)
+          .json(
+            this.createResponse(false, null, 'Channel is required in URL path')
+          );
+        return;
+      }
+
+      // Try to parse as AlertManager webhook format
+      const alertManagerPayload = req.body as AlertManagerWebhook;
+
+      // Basic validation for AlertManager format
+      if (
+        !alertManagerPayload.alerts ||
+        !Array.isArray(alertManagerPayload.alerts)
+      ) {
+        res
+          .status(400)
+          .json(
+            this.createResponse(
+              false,
+              null,
+              'Invalid AlertManager webhook format: missing alerts array'
+            )
+          );
+        return;
+      }
+
+      // Transform AlertManager payload to message format
+      const message = this.formatAlertManagerMessage(alertManagerPayload);
+      const priority = this.getAlertPriority(alertManagerPayload);
+
+      // Log the AlertManager webhook request
+      logger.info('AlertManager webhook received', {
+        channel,
+        status: alertManagerPayload.status,
+        alertCount: alertManagerPayload.alerts.length,
+        receiver: alertManagerPayload.receiver,
+        truncatedAlerts: alertManagerPayload.truncatedAlerts || 0,
+      });
+
+      // Use MessagePushService to actually send the message
+      const pushData = {
+        channelId: channel,
+        message,
+        format: 'html' as const,
+        priority,
+        metadata: {
+          source: 'alertmanager',
+          receiver: alertManagerPayload.receiver,
+          status: alertManagerPayload.status,
+          groupKey: alertManagerPayload.groupKey,
+          alertCount: alertManagerPayload.alerts.length,
+          externalURL: alertManagerPayload.externalURL,
+          version: alertManagerPayload.version,
+          groupLabels: JSON.stringify(alertManagerPayload.groupLabels),
+          commonLabels: JSON.stringify(alertManagerPayload.commonLabels),
+        },
+        timestamp: new Date().toISOString(),
+      };
+
+      try {
+        const result = await this.messagePushService.pushToChannel(pushData);
+
+        if (result.success) {
+          res.json(
+            this.createResponse(true, {
+              channelId: result.channelId,
+              status: 'sent',
+              messageId: result.messageId,
+              timestamp: result.timestamp,
+              recipientCount: result.recipientCount,
+              alertManager: {
+                status: alertManagerPayload.status,
+                alertCount: alertManagerPayload.alerts.length,
+                receiver: alertManagerPayload.receiver,
+              },
+            })
+          );
+        } else {
+          res
+            .status(500)
+            .json(
+              this.createResponse(
+                false,
+                null,
+                result.error || 'Failed to send AlertManager notification'
+              )
+            );
+        }
+      } catch (pushError) {
+        const pushErrorMessage =
+          pushError instanceof Error ? pushError.message : 'Unknown push error';
+        logger.error('AlertManager webhook push operation failed', {
+          error: pushErrorMessage,
+          pushData,
+        });
+        res
+          .status(500)
+          .json(
+            this.createResponse(false, null, `Push failed: ${pushErrorMessage}`)
+          );
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Failed to process AlertManager webhook request', {
+        error: errorMessage,
+        body: req.body,
+      });
+      res.status(500).json(this.createResponse(false, null, errorMessage));
+    }
+  }
+
+  private formatAlertManagerMessage(payload: AlertManagerWebhook): string {
+    const { status, alerts, receiver, commonLabels } = payload;
+    const isResolved = status === 'resolved';
+    const statusEmoji = isResolved ? '✅' : '🚨';
+    const statusText = isResolved ? 'RESOLVED' : 'FIRING';
+
+    let message = `${statusEmoji} <b>[${statusText}:${alerts.length}]</b> - ${receiver}\n\n`;
+
+    // Add common labels if any
+    if (Object.keys(commonLabels).length > 0) {
+      message += '<b>Common Labels:</b>\n';
+      Object.entries(commonLabels).forEach(([key, value]) => {
+        message += `• ${key}: <code>${value}</code>\n`;
+      });
+      message += '\n';
+    }
+
+    // Add individual alerts
+    alerts.forEach((alert, index) => {
+      if (index > 0) message += '\n---\n\n';
+
+      message += `<b>Alert ${index + 1}:</b> ${alert.labels.alertname || 'Unknown'}\n`;
+      message += `<b>Status:</b> ${alert.status}\n`;
+
+      // Add labels (excluding alertname to avoid duplication)
+      const labels = Object.entries(alert.labels).filter(
+        ([key]) => key !== 'alertname'
+      );
+      if (labels.length > 0) {
+        message += '<b>Labels:</b>\n';
+        labels.forEach(([key, value]) => {
+          message += `• ${key}: <code>${value}</code>\n`;
+        });
+      }
+
+      // Add annotations
+      if (Object.keys(alert.annotations).length > 0) {
+        message += '<b>Annotations:</b>\n';
+        Object.entries(alert.annotations).forEach(([key, value]) => {
+          message += `• ${key}: ${value}\n`;
+        });
+      }
+
+      // Add timing information
+      message += `<b>Started:</b> ${new Date(alert.startsAt).toLocaleString()}\n`;
+      if (
+        alert.status === 'resolved' &&
+        alert.endsAt !== '0001-01-01T00:00:00Z'
+      ) {
+        message += `<b>Resolved:</b> ${new Date(alert.endsAt).toLocaleString()}\n`;
+      }
+
+      // Add generator URL if available
+      if (alert.generatorURL) {
+        message += `<b>Source:</b> <a href="${alert.generatorURL}">View Alert</a>\n`;
+      }
+    });
+
+    // Add external URL if different from individual alerts
+    if (
+      payload.externalURL &&
+      !alerts.some(alert => alert.generatorURL === payload.externalURL)
+    ) {
+      message += `\n<b>AlertManager:</b> <a href="${payload.externalURL}">View Dashboard</a>`;
+    }
+
+    return message;
+  }
+
+  private getAlertPriority(
+    payload: AlertManagerWebhook
+  ): 'low' | 'normal' | 'high' {
+    // Determine priority based on alert status and labels
+    if (payload.status === 'resolved') {
+      return 'low';
+    }
+
+    // Check for severity labels in any alert
+    const hasCritical = payload.alerts.some(
+      alert =>
+        alert.labels.severity === 'critical' ||
+        alert.labels.priority === 'critical'
+    );
+
+    const hasWarning = payload.alerts.some(
+      alert =>
+        alert.labels.severity === 'warning' ||
+        alert.labels.priority === 'warning'
+    );
+
+    if (hasCritical) {
+      return 'high';
+    } else if (hasWarning) {
+      return 'normal';
+    }
+
+    return 'normal';
   }
 
   private async handlePushMessage(req: Request, res: Response): Promise<void> {
