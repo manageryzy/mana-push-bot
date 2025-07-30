@@ -78,6 +78,7 @@ describe('ChannelService', () => {
         channelSubscriptions: JSON.parse(JSON.stringify(mockSubscriptions)),
       }),
       updateConfig: jest.fn().mockResolvedValue(undefined),
+      reloadConfig: jest.fn().mockResolvedValue(undefined),
     } as any;
 
     // Mock TelegramService
