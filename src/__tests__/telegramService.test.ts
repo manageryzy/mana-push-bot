@@ -43,6 +43,44 @@ describe('TelegramService', () => {
       expect(result).toBe(false);
       expect(mockSendMessage).toHaveBeenCalledWith(12345, 'Test message', {});
     });
+
+    it('should split long messages automatically', async () => {
+      // Create a message longer than the safe limit (4000 characters)
+      const longMessage = 'A'.repeat(5000);
+
+      const mockSendMessage = jest.fn().mockResolvedValue({ message_id: 1 });
+      telegramService.getBot().telegram.sendMessage = mockSendMessage;
+
+      const result = await telegramService.sendNotification(12345, longMessage);
+
+      expect(result).toBe(true);
+      // Should be called multiple times for message parts
+      expect(mockSendMessage.mock.calls.length).toBeGreaterThan(1);
+
+      // Each call should have text less than the limit
+      mockSendMessage.mock.calls.forEach(call => {
+        const messageText = call[1];
+        expect(messageText.length).toBeLessThanOrEqual(4096);
+      });
+    });
+
+    it('should handle "message too long" error by splitting', async () => {
+      // Create a message that's under safe limit but Telegram still rejects
+      const message = 'B'.repeat(3500);
+
+      const mockSendMessage = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('Bad Request: message is too long'))
+        .mockResolvedValue({ message_id: 1 });
+
+      telegramService.getBot().telegram.sendMessage = mockSendMessage;
+
+      const result = await telegramService.sendNotification(12345, message);
+
+      expect(result).toBe(true);
+      // Should be called multiple times - first fails, then split parts succeed
+      expect(mockSendMessage.mock.calls.length).toBeGreaterThan(1);
+    });
   });
 
   describe('handleWebhook', () => {

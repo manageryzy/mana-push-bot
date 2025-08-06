@@ -6,6 +6,11 @@ import { ChannelService } from '@/services/channelService';
 import { ConfigService } from '@/services/configService';
 import { TelegramService } from '@/services/telegramService';
 import { MessagePushService } from '@/services/messagePushService';
+import { templateEngine } from '@/utils/templateEngine';
+import {
+  DEFAULT_ALERTMANAGER_TEMPLATE,
+  AlertManagerTemplateContext,
+} from '@/templates/alertManagerTemplate';
 
 export interface PushMessageRequest {
   channel?: string;
@@ -37,6 +42,7 @@ export interface AlertManagerWebhook {
   version: string;
   groupKey: string;
   truncatedAlerts?: number;
+  template?: string; // Optional custom template
 }
 
 export interface ApiResponse<T = any> {
@@ -304,8 +310,24 @@ export class SimpleHttpServer {
         return;
       }
 
+      logger.info('AlertManager webhook received', {
+        channel,
+        status: alertManagerPayload.status,
+        alertCount: alertManagerPayload.alerts.length,
+        receiver: alertManagerPayload.receiver,
+        truncatedAlerts: alertManagerPayload.truncatedAlerts || 0,
+      });
+      for (const alert of alertManagerPayload.alerts) {
+        logger.info('Alert', {
+          alert,
+        });
+      }
+
       // Transform AlertManager payload to message format
-      const message = this.formatAlertManagerMessage(alertManagerPayload);
+      const message = this.formatAlertManagerMessage(
+        alertManagerPayload,
+        alertManagerPayload.template
+      );
       const priority = this.getAlertPriority(alertManagerPayload);
 
       // Log the AlertManager webhook request
@@ -323,17 +345,17 @@ export class SimpleHttpServer {
         message,
         format: 'html' as const,
         priority,
-        metadata: {
-          source: 'alertmanager',
-          receiver: alertManagerPayload.receiver,
-          status: alertManagerPayload.status,
-          groupKey: alertManagerPayload.groupKey,
-          alertCount: alertManagerPayload.alerts.length,
-          externalURL: alertManagerPayload.externalURL,
-          version: alertManagerPayload.version,
-          groupLabels: JSON.stringify(alertManagerPayload.groupLabels),
-          commonLabels: JSON.stringify(alertManagerPayload.commonLabels),
-        },
+        // metadata: {
+        //   source: 'alertmanager',
+        //   receiver: alertManagerPayload.receiver,
+        //   status: alertManagerPayload.status,
+        //   groupKey: alertManagerPayload.groupKey,
+        //   alertCount: alertManagerPayload.alerts.length,
+        //   externalURL: alertManagerPayload.externalURL,
+        //   version: alertManagerPayload.version,
+        //   groupLabels: JSON.stringify(alertManagerPayload.groupLabels),
+        //   commonLabels: JSON.stringify(alertManagerPayload.commonLabels),
+        // },
         timestamp: new Date().toISOString(),
       };
 
@@ -390,73 +412,91 @@ export class SimpleHttpServer {
     }
   }
 
-  private formatAlertManagerMessage(payload: AlertManagerWebhook): string {
-    const { status, alerts, receiver, commonLabels } = payload;
-    const isResolved = status === 'resolved';
-    const statusEmoji = isResolved ? '✅' : '🚨';
-    const statusText = isResolved ? 'RESOLVED' : 'FIRING';
+  private formatAlertManagerMessage(
+    payload: AlertManagerWebhook,
+    template?: string
+  ): string {
+    const { status, alerts, receiver, commonLabels, externalURL } = payload;
 
-    let message = `${statusEmoji} <b>[${statusText}:${alerts.length}]</b> - ${receiver}\n\n`;
+    // Filter out internal labels (starting with '__') and prepare common labels
+    const filteredCommonLabels = Object.entries(commonLabels)
+      .filter(([key]) => !key.startsWith('__'))
+      .map(([key, value]) => ({ key, value }));
 
-    // Add common labels if any
-    if (Object.keys(commonLabels).length > 0) {
-      message += '<b>Common Labels:</b>\n';
-      Object.entries(commonLabels).forEach(([key, value]) => {
-        message += `• ${key}: <code>${value}</code>\n`;
-      });
-      message += '\n';
-    }
+    // Get common label keys for filtering individual alert labels
+    const commonLabelKeys = new Set(filteredCommonLabels.map(({ key }) => key));
 
-    // Add individual alerts
-    alerts.forEach((alert, index) => {
-      if (index > 0) message += '\n---\n\n';
+    // Process alerts and add computed properties
+    const processedAlerts = alerts.map(alert => {
+      // Add unique labels (excluding alertname, internal labels, and common labels)
+      const uniqueLabels = Object.entries(alert.labels)
+        .filter(
+          ([key]) =>
+            key !== 'alertname' &&
+            !key.startsWith('__') &&
+            !commonLabelKeys.has(key)
+        )
+        .map(([key, value]) => ({ key, value }));
 
-      message += `<b>Alert ${index + 1}:</b> ${alert.labels.alertname || 'Unknown'}\n`;
-      message += `<b>Status:</b> ${alert.status}\n`;
+      // Filter annotations (exclude internal ones)
+      const filteredAnnotations = Object.entries(alert.annotations)
+        .filter(([key]) => !key.startsWith('__'))
+        .map(([key, value]) => ({ key, value }));
 
-      // Add labels (excluding alertname to avoid duplication)
-      const labels = Object.entries(alert.labels).filter(
-        ([key]) => key !== 'alertname'
-      );
-      if (labels.length > 0) {
-        message += '<b>Labels:</b>\n';
-        labels.forEach(([key, value]) => {
-          message += `• ${key}: <code>${value}</code>\n`;
-        });
-      }
+      const alertName = alert.labels.alertname || 'Unknown';
+      const showResolvedTime =
+        alert.status === 'resolved' && alert.endsAt !== '0001-01-01T00:00:00Z';
 
-      // Add annotations
-      if (Object.keys(alert.annotations).length > 0) {
-        message += '<b>Annotations:</b>\n';
-        Object.entries(alert.annotations).forEach(([key, value]) => {
-          message += `• ${key}: ${value}\n`;
-        });
-      }
-
-      // Add timing information
-      message += `<b>Started:</b> ${new Date(alert.startsAt).toLocaleString()}\n`;
-      if (
-        alert.status === 'resolved' &&
-        alert.endsAt !== '0001-01-01T00:00:00Z'
-      ) {
-        message += `<b>Resolved:</b> ${new Date(alert.endsAt).toLocaleString()}\n`;
-      }
-
-      // Add generator URL if available
-      if (alert.generatorURL) {
-        message += `<b>Source:</b> <a href="${alert.generatorURL}">View Alert</a>\n`;
-      }
+      return {
+        ...alert,
+        alertName,
+        showResolvedTime,
+        uniqueLabels: uniqueLabels.length > 0 ? uniqueLabels : undefined,
+        filteredAnnotations:
+          filteredAnnotations.length > 0 ? filteredAnnotations : undefined,
+      };
     });
 
-    // Add external URL if different from individual alerts
-    if (
-      payload.externalURL &&
-      !alerts.some(alert => alert.generatorURL === payload.externalURL)
-    ) {
-      message += `\n<b>AlertManager:</b> <a href="${payload.externalURL}">View Dashboard</a>`;
-    }
+    // Check if we should show external URL
+    const showExternalURL = Boolean(
+      externalURL && !alerts.some(alert => alert.generatorURL === externalURL)
+    );
 
-    return message;
+    // Create template context for Handlebars
+    const context: AlertManagerTemplateContext = {
+      status,
+      receiver,
+      alerts: processedAlerts,
+      commonLabels,
+      filteredCommonLabels:
+        filteredCommonLabels.length > 0 ? filteredCommonLabels : undefined,
+      externalURL,
+      showExternalURL,
+    };
+
+    // Use provided template or default
+    const templateToUse = template || DEFAULT_ALERTMANAGER_TEMPLATE;
+
+    try {
+      const result = templateEngine.render(templateToUse, context);
+      logger.info('AlertManager template rendered successfully', {
+        alertCount: alerts.length,
+        receiver,
+        status,
+        templateLength: templateToUse.length,
+        resultLength: result.length,
+      });
+      return result;
+    } catch (error) {
+      logger.error('Failed to render AlertManager template', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        template: templateToUse.substring(0, 100) + '...',
+        context: JSON.stringify(context, null, 2),
+      });
+
+      // Fallback to a simple message if template rendering fails
+      return `🚨 Alert: ${alerts.length} alert(s) from ${receiver}\n\nTemplate rendering failed. Please check template syntax.`;
+    }
   }
 
   private getAlertPriority(

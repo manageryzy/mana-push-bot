@@ -178,6 +178,7 @@ export class HttpServer {
 
       // Check if push failed
       if (!result.success) {
+        logger.error('Failed to push message', { error: result.error });
         return res
           .status(500)
           .json(

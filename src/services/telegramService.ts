@@ -2,7 +2,13 @@ import { Telegraf } from 'telegraf';
 import { config } from '@/config';
 import { BotContext } from '@/types';
 import { logger } from '@/utils/logger';
-import { bold, escapeMarkdownV2 } from '@/utils/telegramFormatting';
+import {
+  bold,
+  escapeMarkdownV2,
+  splitMessage,
+  addContinuationIndicators,
+  SAFE_MESSAGE_LIMIT,
+} from '@/utils/telegramFormatting';
 import { MessageService } from './messageService';
 import { DeveloperService } from './developerService';
 
@@ -696,6 +702,17 @@ export class TelegramService {
         hasMarkdownV2: options.parse_mode === 'MarkdownV2',
       });
 
+      // Check if message exceeds Telegram's limit
+      if (text.length > SAFE_MESSAGE_LIMIT) {
+        logger.info('Message exceeds length limit, splitting into parts', {
+          chatId,
+          originalLength: text.length,
+          limit: SAFE_MESSAGE_LIMIT,
+        });
+
+        return await this.sendSplitMessage(chatId, text, options);
+      }
+
       await this.bot.telegram.sendMessage(chatId, text, options);
       logger.info('Notification sent successfully', {
         chatId,
@@ -705,12 +722,94 @@ export class TelegramService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
+
+      // If the error is about message length, try splitting even if under our safe limit
+      if (errorMessage.includes('message is too long')) {
+        logger.warn('Message rejected as too long, attempting to split', {
+          chatId,
+          textLength: text.length,
+          error: errorMessage,
+        });
+
+        return await this.sendSplitMessage(chatId, text, options);
+      }
+
       logger.error('Failed to send notification', {
         chatId,
         text: text.substring(0, 50),
         error: errorMessage,
         parseMode: options.parse_mode,
         fullText: text, // Log full text to see what caused the error
+      });
+      return false;
+    }
+  }
+
+  /**
+   * Send a message that exceeds the length limit by splitting it into multiple parts
+   */
+  private async sendSplitMessage(
+    chatId: number,
+    text: string,
+    options: any = {}
+  ): Promise<boolean> {
+    try {
+      // Split the message into parts
+      const messageParts = splitMessage(text);
+
+      logger.info('Splitting message into parts', {
+        chatId,
+        originalLength: text.length,
+        parts: messageParts.length,
+        partLengths: messageParts.map(part => part.length),
+      });
+
+      // Add continuation indicators if there are multiple parts
+      const partsWithIndicators = addContinuationIndicators(messageParts);
+
+      let allSuccessful = true;
+      let sentCount = 0;
+
+      // Send each part with a small delay to avoid rate limiting
+      for (let i = 0; i < partsWithIndicators.length; i++) {
+        const part = partsWithIndicators[i];
+
+        try {
+          await this.bot.telegram.sendMessage(chatId, part, options);
+          sentCount++;
+
+          // Add a small delay between messages to avoid hitting rate limits
+          if (i < partsWithIndicators.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown error';
+          logger.error('Failed to send message part', {
+            chatId,
+            partIndex: i + 1,
+            totalParts: partsWithIndicators.length,
+            partLength: part.length,
+            error: errorMessage,
+          });
+          allSuccessful = false;
+        }
+      }
+
+      logger.info('Split message sending completed', {
+        chatId,
+        totalParts: partsWithIndicators.length,
+        sentSuccessfully: sentCount,
+        allSuccessful,
+      });
+
+      return allSuccessful;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Failed to send split message', {
+        chatId,
+        error: errorMessage,
       });
       return false;
     }
