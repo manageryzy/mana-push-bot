@@ -450,6 +450,107 @@ describe('MessagePushService', () => {
       expect(sentMessage).toContain('━━━━━━━━━━━━━━━━━━━━');
       expect(sentMessage).toContain('1/19/2025');
     });
+
+    it('should properly handle Unicode escape sequences in HTML format', async () => {
+      const data: PushMessageData = {
+        channelId: 'alerts',
+        message:
+          "\\u4ea4\\u6613\\u5bf9 ('DOT/USDT:USDT', 'QTUM/USDT:USDT') | \\u7d2f\\u8ba1\\u6536\\u76ca: 1.06% | \\u590f\\u666e\\u6bd4\\u7387: 1.29",
+        format: 'html',
+        timestamp: new Date().toISOString(),
+      };
+
+      await messagePushService.pushToChannel(data);
+
+      const sentMessage = mockSendMessage.mock.calls[0][1];
+      // Check that Unicode escapes are decoded to actual Chinese characters
+      expect(sentMessage).toContain('交易对');
+      expect(sentMessage).toContain('累计收益');
+      expect(sentMessage).toContain('夏普比率');
+      // Check that HTML special characters in user content are properly escaped
+      expect(sentMessage).toContain('&#39;'); // ' should be escaped as &#39;
+      // Check that our formatting HTML tags are preserved (not escaped)
+      expect(sentMessage).toContain('<i>Sent:'); // Our HTML tags should not be escaped
+      expect(sentMessage).not.toContain('&lt;i&gt;'); // Should not be escaped
+    });
+
+    it('should properly handle Unicode escape sequences in markdown format', async () => {
+      const data: PushMessageData = {
+        channelId: 'alerts',
+        message: '\\u4ea4\\u6613\\u5bf9: \\u6210\\u529f',
+        format: 'markdown',
+        timestamp: new Date().toISOString(),
+      };
+
+      await messagePushService.pushToChannel(data);
+
+      const sentMessage = mockSendMessage.mock.calls[0][1];
+      // Check that Unicode escapes are decoded and then escaped for MarkdownV2
+      expect(sentMessage).toContain('交易对');
+      expect(sentMessage).toContain('成功');
+    });
+
+    it('should properly handle Unicode escape sequences in plain text format', async () => {
+      const data: PushMessageData = {
+        channelId: 'alerts',
+        message: '\\u4ea4\\u6613\\u5bf9 (DOT/USDT) \\u6210\\u529f',
+        format: 'text',
+        timestamp: new Date().toISOString(),
+      };
+
+      await messagePushService.pushToChannel(data);
+
+      const sentMessage = mockSendMessage.mock.calls[0][1];
+      // Check that Unicode escapes are decoded to actual Chinese characters
+      expect(sentMessage).toContain('交易对');
+      expect(sentMessage).toContain('成功');
+    });
+
+    it('should handle Unicode escapes in metadata', async () => {
+      const data: PushMessageData = {
+        channelId: 'alerts',
+        message: 'Trading alert',
+        format: 'html',
+        metadata: {
+          '\\u4ea4\\u6613\\u5bf9': 'DOT/USDT',
+          '\\u72b6\\u6001': '\\u6210\\u529f',
+        },
+        timestamp: new Date().toISOString(),
+      };
+
+      await messagePushService.pushToChannel(data);
+
+      const sentMessage = mockSendMessage.mock.calls[0][1];
+      // Check that metadata keys and values are properly decoded
+      expect(sentMessage).toContain('交易对');
+      expect(sentMessage).toContain('状态');
+      expect(sentMessage).toContain('成功');
+      // Check that metadata formatting uses HTML tags
+      expect(sentMessage).toContain('<b>交易对</b>');
+      expect(sentMessage).toContain('<b>状态</b>');
+    });
+
+    it('should properly escape HTML in user content while preserving formatting tags', async () => {
+      const data: PushMessageData = {
+        channelId: 'alerts',
+        message:
+          'Alert: <script>alert("xss")</script> & other <dangerous> content',
+        format: 'html',
+        priority: 'high',
+        timestamp: new Date().toISOString(),
+      };
+
+      await messagePushService.pushToChannel(data);
+
+      const sentMessage = mockSendMessage.mock.calls[0][1];
+      // Check that dangerous HTML in user content is escaped
+      expect(sentMessage).toContain('&lt;script&gt;');
+      expect(sentMessage).toContain('&lt;dangerous&gt;');
+      expect(sentMessage).toContain('&amp;'); // & should be escaped
+      // Check that our formatting HTML tags are preserved
+      expect(sentMessage).toContain('<b>HIGH PRIORITY</b>');
+      expect(sentMessage).toContain('<i>Sent:');
+    });
   });
 
   describe('Real-world Scenarios', () => {

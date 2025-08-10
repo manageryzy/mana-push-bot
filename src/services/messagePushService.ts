@@ -2,7 +2,14 @@ import { logger } from '@/utils/logger';
 import { TelegramService } from '@/services/telegramService';
 import { ChannelService } from '@/services/channelService';
 import { ConfigService } from '@/services/configService';
-import { escapeMarkdownV2, bold, italic } from '@/utils/telegramFormatting';
+import {
+  escapeMarkdownV2,
+  bold,
+  italic,
+  splitMessage,
+  SAFE_MESSAGE_LIMIT,
+} from '@/utils/telegramFormatting';
+import { decodeUnicodeEscapes, escapeHtml } from '@/utils/helpers';
 
 export interface PushMessageData {
   channelId: string;
@@ -16,10 +23,12 @@ export interface PushMessageData {
 export interface PushResult {
   success: boolean;
   messageId?: number;
+  messageIds?: number[];
   error?: string;
   channelId: string;
   timestamp: string;
   recipientCount: number;
+  numberOfParts?: number;
 }
 
 export interface PushStats {
@@ -92,7 +101,7 @@ export class MessagePushService {
       });
 
       // Format message based on specified format
-      const formattedMessage = this.formatMessage(
+      const formattedMessages = this.formatMessage(
         data.message,
         data.format || 'markdown',
         data
@@ -100,7 +109,7 @@ export class MessagePushService {
 
       // Send to channel chat
       const bot = this.telegramService.getBot();
-      let messageId: number | undefined;
+      const messageIds: number[] = [];
 
       const sendOptions: any = {
         link_preview_options: { is_disabled: true },
@@ -112,22 +121,42 @@ export class MessagePushService {
       }
 
       try {
-        // Debug logging before sending message
-        logger.debug('About to send Telegram message', {
+        // Debug logging before sending messages
+        logger.debug('About to send Telegram messages', {
           channelId: data.channelId,
           chatId: channel.chatId,
-          messageLength: formattedMessage.length,
-          messagePreview: formattedMessage.substring(0, 200),
+          numberOfParts: formattedMessages.length,
+          totalLength: formattedMessages.reduce(
+            (sum, msg) => sum + msg.length,
+            0
+          ),
           parseMode: sendOptions.parse_mode,
-          fullMessage: formattedMessage, // Include full message for debugging MarkdownV2 issues
         });
 
-        const sentMessage = await bot.telegram.sendMessage(
-          channel.chatId,
-          formattedMessage,
-          sendOptions
-        );
-        messageId = sentMessage.message_id;
+        // Send each message part with delay to avoid rate limiting
+        for (let i = 0; i < formattedMessages.length; i++) {
+          const messagePart = formattedMessages[i];
+
+          logger.debug('Sending message part', {
+            channelId: data.channelId,
+            partNumber: i + 1,
+            totalParts: formattedMessages.length,
+            partLength: messagePart.length,
+            partPreview: messagePart.substring(0, 200),
+          });
+
+          const sentMessage = await bot.telegram.sendMessage(
+            channel.chatId,
+            messagePart,
+            sendOptions
+          );
+          messageIds.push(sentMessage.message_id);
+
+          // Add small delay between parts to avoid rate limiting
+          if (i < formattedMessages.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
@@ -142,8 +171,7 @@ export class MessagePushService {
             chatId: channel.chatId,
             error: errorMessage,
             parseMode: sendOptions.parse_mode,
-            messageLength: formattedMessage.length,
-            formattedMessage: formattedMessage,
+            numberOfParts: formattedMessages.length,
             originalMessage: data.message,
           });
         }
@@ -157,7 +185,7 @@ export class MessagePushService {
       }
 
       // Send to individual subscribers if needed
-      let successCount = 1; // Channel message sent successfully
+      let successCount = formattedMessages.length; // Channel messages sent successfully
       let failCount = 0;
 
       if (subscribers.length > 0) {
@@ -173,22 +201,34 @@ export class MessagePushService {
             }
 
             try {
-              logger.info('Attempting to send message to subscriber', {
+              logger.info('Attempting to send message parts to subscriber', {
                 userId: subscription.userId,
                 chatId: subscription.chatId,
                 channelId: data.channelId,
+                numberOfParts: formattedMessages.length,
               });
 
-              await bot.telegram.sendMessage(
-                subscription.chatId,
-                formattedMessage,
-                subscriberOptions
-              );
+              // Send each message part to subscriber
+              for (let i = 0; i < formattedMessages.length; i++) {
+                const messagePart = formattedMessages[i];
 
-              logger.info('Successfully sent message to subscriber', {
+                await bot.telegram.sendMessage(
+                  subscription.chatId,
+                  messagePart,
+                  subscriberOptions
+                );
+
+                // Add small delay between parts for subscribers too
+                if (i < formattedMessages.length - 1) {
+                  await new Promise(resolve => setTimeout(resolve, 300));
+                }
+              }
+
+              logger.info('Successfully sent all message parts to subscriber', {
                 userId: subscription.userId,
                 chatId: subscription.chatId,
                 channelId: data.channelId,
+                numberOfParts: formattedMessages.length,
               });
 
               return {
@@ -211,13 +251,12 @@ export class MessagePushService {
                   chatId: subscription.chatId,
                   error: errorMessage,
                   parseMode: subscriberOptions.parse_mode,
-                  messageLength: formattedMessage.length,
-                  formattedMessage: formattedMessage,
+                  numberOfParts: formattedMessages.length,
                   originalMessage: data.message,
                 });
               }
 
-              logger.error('Failed to send message to subscriber', {
+              logger.error('Failed to send message parts to subscriber', {
                 channelId: data.channelId,
                 userId: subscription.userId,
                 chatId: subscription.chatId,
@@ -233,9 +272,11 @@ export class MessagePushService {
           })
         );
 
-        successCount += subscriberResults.filter(
+        const subscriberSuccessCount = subscriberResults.filter(
           r => r.status === 'fulfilled' && r.value.success
         ).length;
+
+        successCount += subscriberSuccessCount * formattedMessages.length;
 
         failCount = subscriberResults.filter(
           r =>
@@ -250,16 +291,20 @@ export class MessagePushService {
 
       const result: PushResult = {
         success: true,
-        messageId,
+        messageId: messageIds[0], // Return the first message ID
+        messageIds: messageIds, // Return all message IDs
         channelId: data.channelId,
         timestamp: new Date().toISOString(),
         recipientCount: successCount,
+        numberOfParts: formattedMessages.length,
       };
 
       logger.info('Message pushed successfully', {
         channelId: data.channelId,
         recipientCount: successCount,
         failedCount: failCount,
+        numberOfParts: formattedMessages.length,
+        messageIds: messageIds,
         duration: Date.now() - startTime,
       });
 
@@ -372,11 +417,14 @@ export class MessagePushService {
     message: string,
     format: string,
     data: PushMessageData
-  ): string {
+  ): string[] {
     const timestamp = new Date(data.timestamp).toLocaleString();
     const priority = data.priority || 'normal';
 
-    let formattedMessage = message;
+    // First, decode any Unicode escape sequences to get proper UTF-8 characters
+    let formattedMessage = decodeUnicodeEscapes(message);
+    let header = '';
+    let footer = '';
 
     if (format === 'markdown') {
       // Escape the main message for MarkdownV2
@@ -384,65 +432,227 @@ export class MessagePushService {
 
       // Add priority indicator for high priority messages
       if (priority === 'high') {
-        formattedMessage = `🚨 ${bold('HIGH PRIORITY')} 🚨\n\n${formattedMessage}`;
+        header = `🚨 ${bold('HIGH PRIORITY')} 🚨\n\n`;
       } else if (priority === 'low') {
-        formattedMessage = `📋 ${italic('Info')}: ${formattedMessage}`;
+        header = `📋 ${italic('Info')}: `;
       }
 
       // Debug logging for message formatting
       logger.debug('Formatting message with MarkdownV2', {
         originalLength: message.length,
-        formattedLength: formattedMessage.length,
+        decodedLength: formattedMessage.length,
         priority,
         hasMetadata: data.metadata && Object.keys(data.metadata).length > 0,
+        hasUnicodeEscapes: message.includes('\\u'),
+        originalPreview: message.substring(0, 100),
+        decodedPreview: formattedMessage.substring(0, 100),
       });
 
       // Add metadata if present
+      let metadataSection = '';
       if (data.metadata && Object.keys(data.metadata).length > 0) {
         const metadataLines = Object.entries(data.metadata)
           .map(
             ([key, value]) => `${bold(key)}: ${escapeMarkdownV2(String(value))}`
           )
           .join('\n');
-        formattedMessage += `\n\n${metadataLines}`;
+        metadataSection = `\n\n${metadataLines}`;
       }
 
       // Add separator line and timestamp footer
-      formattedMessage += `\n\n${'━'.repeat(20)}\n${italic(`Sent: ${escapeMarkdownV2(timestamp)}`)}`;
+      footer = `${metadataSection}\n\n${'━'.repeat(20)}\n${italic(`Sent: ${escapeMarkdownV2(timestamp)}`)}`;
     } else if (format === 'html') {
+      // Debug logging for HTML message formatting
+      logger.debug('Formatting message with HTML', {
+        originalLength: message.length,
+        decodedLength: formattedMessage.length,
+        priority,
+        hasMetadata: data.metadata && Object.keys(data.metadata).length > 0,
+        hasUnicodeEscapes: message.includes('\\u'),
+        originalPreview: message.substring(0, 100),
+        decodedPreview: formattedMessage.substring(0, 100),
+      });
+
       if (priority === 'high') {
-        formattedMessage = `🚨 <b>HIGH PRIORITY</b> 🚨\n\n${formattedMessage}`;
+        header = `🚨 <b>HIGH PRIORITY</b> 🚨\n\n`;
       } else if (priority === 'low') {
-        formattedMessage = `📋 <i>Info</i>: ${formattedMessage}`;
+        header = `📋 <i>Info</i>: `;
       }
 
+      let metadataSection = '';
       if (data.metadata && Object.keys(data.metadata).length > 0) {
         const metadataLines = Object.entries(data.metadata)
-          .map(([key, value]) => `<b>${key}</b>: ${String(value)}`)
+          .map(([key, value]) => {
+            const decodedKey = decodeUnicodeEscapes(String(key));
+            const decodedValue = decodeUnicodeEscapes(String(value));
+            return `<b>${escapeHtml(decodedKey)}</b>: ${escapeHtml(decodedValue)}`;
+          })
           .join('\n');
-        formattedMessage += `\n\n${metadataLines}`;
+        metadataSection = `\n\n${metadataLines}`;
       }
 
-      formattedMessage += `\n\n<i>Sent: ${timestamp}</i>`;
+      footer = `${metadataSection}\n\n<i>Sent: ${timestamp}</i>`;
     } else {
-      // Plain text format
+      // Plain text format - formattedMessage already has Unicode decoded
       if (priority === 'high') {
-        formattedMessage = `🚨 HIGH PRIORITY 🚨\n\n${formattedMessage}`;
+        header = `🚨 HIGH PRIORITY 🚨\n\n`;
       } else if (priority === 'low') {
-        formattedMessage = `📋 Info: ${formattedMessage}`;
+        header = `📋 Info: `;
       }
 
+      let metadataSection = '';
       if (data.metadata && Object.keys(data.metadata).length > 0) {
         const metadataLines = Object.entries(data.metadata)
-          .map(([key, value]) => `${key}: ${String(value)}`)
+          .map(([key, value]) => {
+            const decodedKey = decodeUnicodeEscapes(String(key));
+            const decodedValue = decodeUnicodeEscapes(String(value));
+            return `${decodedKey}: ${decodedValue}`;
+          })
           .join('\n');
-        formattedMessage += `\n\n${metadataLines}`;
+        metadataSection = `\n\n${metadataLines}`;
       }
 
-      formattedMessage += `\n\nSent: ${timestamp}`;
+      footer = `${metadataSection}\n\nSent: ${timestamp}`;
     }
 
-    return formattedMessage;
+    // Combine the parts
+    const fullMessage = header + formattedMessage + footer;
+
+    // Split message if it exceeds the limit
+    const messageParts = this.splitMessageSafely(fullMessage, format, {
+      header,
+      footer,
+      coreMessage: formattedMessage,
+    });
+
+    logger.debug('Message splitting result', {
+      originalLength: fullMessage.length,
+      numberOfParts: messageParts.length,
+      format,
+      channelId: data.channelId,
+    });
+
+    return messageParts;
+  }
+
+  /**
+   * Safely split messages while preserving formatting and structure
+   */
+  private splitMessageSafely(
+    fullMessage: string,
+    format: string,
+    parts: { header: string; footer: string; coreMessage: string }
+  ): string[] {
+    // If message fits within limit, return as single message
+    if (fullMessage.length <= SAFE_MESSAGE_LIMIT) {
+      return [fullMessage];
+    }
+
+    const { header, footer, coreMessage } = parts;
+    const headerLength = header.length;
+    const footerLength = footer.length;
+
+    // Calculate available space for core content per message part
+    // Reserve space for continuation indicators (approx 100 chars)
+    const continuationOverhead = 100;
+    const availableSpacePerPart =
+      SAFE_MESSAGE_LIMIT - headerLength - footerLength - continuationOverhead;
+
+    if (availableSpacePerPart <= 0) {
+      logger.warn('Header and footer too long for message splitting', {
+        headerLength,
+        footerLength,
+        availableSpace: availableSpacePerPart,
+      });
+      // Fallback: split the full message without trying to preserve structure
+      return splitMessage(fullMessage, SAFE_MESSAGE_LIMIT);
+    }
+
+    // Split the core message content
+    const coreMessageParts = splitMessage(coreMessage, availableSpacePerPart);
+
+    // Reassemble with headers/footers and continuation indicators
+    const finalParts = coreMessageParts.map((part, index) => {
+      const isFirst = index === 0;
+      const isLast = index === coreMessageParts.length - 1;
+      const partNumber = index + 1;
+      const totalParts = coreMessageParts.length;
+
+      let assembledPart = '';
+
+      // Add header for first part or continuation indicator for subsequent parts
+      if (isFirst) {
+        assembledPart += header;
+      } else {
+        const continuationHeader = this.formatContinuationHeader(
+          partNumber,
+          totalParts,
+          format,
+          true
+        );
+        assembledPart += continuationHeader + '\n\n';
+      }
+
+      // Add core content
+      assembledPart += part;
+
+      // Add footer for last part or continuation indicator for non-last parts
+      if (isLast) {
+        assembledPart += footer;
+      } else {
+        const continuationFooter = this.formatContinuationFooter(
+          partNumber,
+          totalParts,
+          format
+        );
+        assembledPart += '\n\n' + continuationFooter;
+      }
+
+      return assembledPart;
+    });
+
+    return finalParts;
+  }
+
+  /**
+   * Format continuation header based on message format
+   */
+  private formatContinuationHeader(
+    partNumber: number,
+    totalParts: number,
+    format: string,
+    isFromPrevious: boolean = true
+  ): string {
+    const text = `📄 Part ${partNumber}/${totalParts}${isFromPrevious ? ' (continued from above)' : ''}`;
+
+    switch (format) {
+      case 'markdown':
+        return italic(escapeMarkdownV2(text));
+      case 'html':
+        return `<i>${text}</i>`;
+      default:
+        return text;
+    }
+  }
+
+  /**
+   * Format continuation footer based on message format
+   */
+  private formatContinuationFooter(
+    partNumber: number,
+    totalParts: number,
+    format: string
+  ): string {
+    const text = `📄 Continued in part ${partNumber + 1}/${totalParts}...`;
+
+    switch (format) {
+      case 'markdown':
+        return italic(escapeMarkdownV2(text));
+      case 'html':
+        return `<i>${text}</i>`;
+      default:
+        return text;
+    }
   }
 
   private getParseMode(format: string): 'MarkdownV2' | 'HTML' | undefined {

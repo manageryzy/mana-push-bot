@@ -69,3 +69,47 @@ export function validateEnvironment(): { isValid: boolean; errors: string[] } {
     errors,
   };
 }
+
+/**
+ * Decode Unicode escape sequences in a string
+ * Converts sequences like \u4ea4 to actual UTF-8 characters
+ */
+export function decodeUnicodeEscapes(text: string): string {
+  try {
+    // Handle \uXXXX sequences
+    let decoded = text.replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => {
+      return String.fromCharCode(parseInt(code, 16));
+    });
+
+    // Handle \xXX sequences
+    decoded = decoded.replace(/\\x([0-9a-fA-F]{2})/g, (_, code) => {
+      return String.fromCharCode(parseInt(code, 16));
+    });
+
+    // Handle other common escape sequences
+    decoded = decoded
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\'/g, "'")
+      .replace(/\\\\/g, '\\');
+
+    return decoded;
+  } catch (error) {
+    // If decoding fails, return original text
+    return text;
+  }
+}
+
+/**
+ * Escape HTML special characters while preserving UTF-8 characters
+ */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
