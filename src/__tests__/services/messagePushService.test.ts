@@ -108,6 +108,8 @@ describe('MessagePushService', () => {
       expect(result).toEqual({
         success: true,
         messageId: 12345,
+        messageIds: [12345],
+        numberOfParts: 1,
         channelId: 'alerts',
         timestamp: expect.any(String),
         recipientCount: 4, // 1 channel + 3 subscribers
@@ -266,7 +268,7 @@ describe('MessagePushService', () => {
       expect(result.success).toBe(true);
       expect(result.recipientCount).toBe(3); // 1 channel + 2 successful subscribers
       expect(logger.error).toHaveBeenCalledWith(
-        'Failed to send message to subscriber',
+        'Failed to send message parts to subscriber',
         expect.objectContaining({
           userId: 222222222,
         })

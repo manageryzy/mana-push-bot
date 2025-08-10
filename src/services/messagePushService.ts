@@ -473,6 +473,9 @@ export class MessagePushService {
         decodedPreview: formattedMessage.substring(0, 100),
       });
 
+      // Escape HTML in the main message content
+      formattedMessage = escapeHtml(formattedMessage);
+
       if (priority === 'high') {
         header = `🚨 <b>HIGH PRIORITY</b> 🚨\n\n`;
       } else if (priority === 'low') {

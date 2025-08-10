@@ -12,11 +12,14 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "lint": "eslint src/**/*.ts",
-    "lint:fix": "eslint src/**/*.ts --fix",
+    "lint": "eslint src/**/*.ts --ignore-pattern '**/*.test.ts' --ignore-pattern '**/*.spec.ts' --ignore-pattern '**/__tests__/**'",
+    "lint:fix": "eslint src/**/*.ts --fix --ignore-pattern '**/*.test.ts' --ignore-pattern '**/*.spec.ts' --ignore-pattern '**/__tests__/**'",
+    "lint:test": "eslint \"src/**/*.test.ts\" \"src/__tests__/**/*.ts\"",
+    "lint:test:fix": "eslint \"src/**/*.test.ts\" \"src/__tests__/**/*.ts\" --fix",
     "format": "prettier --write src/**/*.ts",
     "format:check": "prettier --check src/**/*.ts",
     "type-check": "tsc --noEmit",
+    "type-check:test": "tsc --noEmit -p tsconfig.test.json",
     "validate": "npm run type-check && npm run lint && npm run test",
     "prepare": "husky install",
     "deploy": "serverless deploy",
@@ -74,8 +77,12 @@
   "author": "Your Name",
   "license": "MIT",
   "lint-staged": {
-    "*.ts": [
+    "src/**/!(*.test|*.spec).ts": [
       "eslint --fix",
+      "prettier --write"
+    ],
+    "src/**/*.{test,spec}.ts": [
+      "eslint --fix --config .eslintrc.js",
       "prettier --write"
     ],
     "*.{json,md,yml,yaml}": [
